@@ -1,0 +1,422 @@
+/* eslint-disable react-refresh/only-export-components */
+// This file is the single-source crypto contract: it intentionally co-locates the KeyProvider/
+// LockGate components with the useKey() hook and localStorage key constants (per blueprint), so
+// the react-refresh "only export components" rule is disabled here by design.
+//
+// src/crypto/KeyContext.tsx — the in-memory unlocked-key contract for JPassbolt's E2EE model.
+//
+// SECURITY MODEL (the crux of the app):
+//   The server is zero-knowledge. All decrypt/encrypt happens ONLY here, in the browser.
+//   This context holds the UNLOCKED openpgp PrivateKey object IN MEMORY ONLY (React state).
+//   The decrypted PrivateKey and the passphrase are NEVER persisted to localStorage/sessionStorage.
+//
+//   localStorage may hold ONLY:
+//     - jpassbolt_jwt                  (the JWT, managed by auth.ts/api.ts)
+//     - jpassbolt_user                 (the user object)
+//     - jpassbolt_private_key_armored  (passphrase-PROTECTED armored private key — still encrypted at rest)
+//     - jpassbolt_public_key_armored   (own armored PUBLIC key)
+//
+//   Unlock-on-refresh: after a hard refresh the JWT survives (ProtectedRoute passes) but the
+//   in-memory decrypted key is gone. LockGate detects authenticated-but-locked and shows a
+//   passphrase-only Unlock prompt that re-decrypts the armored private key from localStorage.
+//   If no armored private key exists (hasStoredKey === false), it redirects to full /login.
+
+import {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    type FormEvent,
+    type JSX,
+    type ReactNode,
+} from 'react';
+import * as openpgp from 'openpgp';
+import type { PrivateKey } from 'openpgp';
+import { encryptMessage } from '../gpg';
+
+// ---------------------------------------------------------------------------
+// localStorage key constants (single source of truth for the crypto layer)
+// ---------------------------------------------------------------------------
+export const LS_JWT = 'jpassbolt_jwt';
+export const LS_USER = 'jpassbolt_user';
+export const LS_PRIVATE_KEY = 'jpassbolt_private_key_armored';
+export const LS_PUBLIC_KEY = 'jpassbolt_public_key_armored';
+
+// ---------------------------------------------------------------------------
+// Public contract
+// ---------------------------------------------------------------------------
+export interface KeyContextValue {
+    /** True when authenticated (JWT present) but no decrypted key is in memory (e.g. after hard refresh). */
+    isLocked: boolean;
+    /** Own armored public key from localStorage (jpassbolt_public_key_armored), or null if absent. */
+    ownPublicKeyArmored: string | null;
+    /** Fingerprint of the unlocked key (lowercase hex), or null while locked. */
+    ownFingerprint: string | null;
+    /** True only if an armored private key exists in localStorage to unlock against. If false, UI must fall back to full /login. */
+    hasStoredKey: boolean;
+
+    /**
+     * Persist the passphrase-protected armored private key + own public key to localStorage so a
+     * later hard-refresh can unlock against them. Called by Login.tsx right after a successful
+     * loginWithGpg (alongside calling unlock(passphrase) to start the session unlocked).
+     * The public key may be omitted; it will then be derived from the private key on unlock().
+     */
+    setArmoredKeys: (armoredPrivateKey: string, armoredPublicKey?: string | null) => void;
+
+    /** Decrypt the armored private key from localStorage with the passphrase and hold the PrivateKey in memory. Throws on wrong passphrase / missing key. */
+    unlock: (passphrase: string) => Promise<void>;
+    /** Wipe the in-memory PrivateKey + passphrase (does NOT touch the JWT). Sets isLocked = true. */
+    lock: () => void;
+    /** Remove BOTH armored keys from localStorage and wipe in-memory state. Call on logout. Does NOT touch the JWT/user (auth.ts owns those). */
+    clear: () => void;
+
+    /** Decrypt an armored PGP message using the in-memory private key. Throws if isLocked. */
+    decrypt: (armoredMessage: string) => Promise<string>;
+    /** Encrypt plaintext for one or more recipient armored PUBLIC keys (used for share/create per recipient). */
+    encryptFor: (plaintext: string, armoredPublicKeys: string[]) => Promise<string>;
+    /** Convenience: encrypt plaintext for the current user's own public key only (creating a personal secret). */
+    encryptForSelf: (plaintext: string) => Promise<string>;
+}
+
+const KeyContext = createContext<KeyContextValue | null>(null);
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function errMessage(err: unknown, fallback: string): string {
+    if (err instanceof Error && err.message) return err.message;
+    if (typeof err === 'string' && err) return err;
+    return fallback;
+}
+
+function readStoredPrivateKey(): string | null {
+    return localStorage.getItem(LS_PRIVATE_KEY);
+}
+
+function readStoredPublicKey(): string | null {
+    return localStorage.getItem(LS_PUBLIC_KEY);
+}
+
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
+export function KeyProvider({ children }: { children: ReactNode }): JSX.Element {
+    // The decrypted private key lives ONLY in a ref — never serialized, never logged.
+    const privateKeyRef = useRef<PrivateKey | null>(null);
+
+    // Own armored public key mirrors localStorage but is held in state for reactivity.
+    const [ownPublicKeyArmored, setOwnPublicKeyArmored] = useState<string | null>(
+        () => readStoredPublicKey(),
+    );
+    const [ownFingerprint, setOwnFingerprint] = useState<string | null>(null);
+    // `isLocked` flips to false only after a successful unlock; it is the single source of
+    // truth the UI watches. We derive the initial value: locked if no key is in memory yet.
+    const [isLocked, setIsLocked] = useState<boolean>(true);
+    // Bump to force a re-read of hasStoredKey after setArmoredKeys/clear.
+    const [storedKeyVersion, setStoredKeyVersion] = useState(0);
+
+    const hasStoredKey = useMemo(() => {
+        // storedKeyVersion is a dependency so this recomputes after writes.
+        void storedKeyVersion;
+        return readStoredPrivateKey() != null;
+    }, [storedKeyVersion]);
+
+    const setArmoredKeys = useCallback(
+        (armoredPrivateKey: string, armoredPublicKey?: string | null) => {
+            // Persist ONLY the passphrase-protected private key (still encrypted at rest).
+            localStorage.setItem(LS_PRIVATE_KEY, armoredPrivateKey);
+            if (armoredPublicKey) {
+                localStorage.setItem(LS_PUBLIC_KEY, armoredPublicKey);
+                setOwnPublicKeyArmored(armoredPublicKey);
+            }
+            setStoredKeyVersion((v) => v + 1);
+        },
+        [],
+    );
+
+    const lock = useCallback(() => {
+        privateKeyRef.current = null;
+        setOwnFingerprint(null);
+        setIsLocked(true);
+    }, []);
+
+    const clear = useCallback(() => {
+        privateKeyRef.current = null;
+        localStorage.removeItem(LS_PRIVATE_KEY);
+        localStorage.removeItem(LS_PUBLIC_KEY);
+        setOwnPublicKeyArmored(null);
+        setOwnFingerprint(null);
+        setIsLocked(true);
+        setStoredKeyVersion((v) => v + 1);
+    }, []);
+
+    const unlock = useCallback(async (passphrase: string) => {
+        const armoredPrivateKey = readStoredPrivateKey();
+        if (!armoredPrivateKey) {
+            throw new Error('No stored private key to unlock. Please log in again.');
+        }
+
+        // Read + decrypt the private key into memory.
+        let encryptedKey: PrivateKey;
+        try {
+            encryptedKey = await openpgp.readPrivateKey({ armoredKey: armoredPrivateKey });
+        } catch (err: unknown) {
+            throw new Error(errMessage(err, 'Failed to read stored private key.'));
+        }
+
+        let decryptedKey: PrivateKey;
+        if (encryptedKey.isDecrypted()) {
+            // SECURITY: an unprotected (passphrase-less) key in localStorage would let
+            // ANYONE with access to this browser profile "unlock" with any passphrase
+            // after a refresh — defeating the whole in-memory-passphrase model. Login
+            // refuses such keys up front; refuse here too as a defence-in-depth guard.
+            throw new Error(
+                'Your stored key is not passphrase-protected. For your security, please log in again with a passphrase-protected key.',
+            );
+        } else {
+            try {
+                decryptedKey = await openpgp.decryptKey({
+                    privateKey: encryptedKey,
+                    passphrase,
+                });
+            } catch {
+                throw new Error('Incorrect passphrase. Could not unlock your key.');
+            }
+        }
+
+        // Hold the unlocked key in memory ONLY.
+        privateKeyRef.current = decryptedKey;
+        setOwnFingerprint(decryptedKey.getFingerprint().toLowerCase());
+
+        // Ensure we have an own public key armored available for encryptForSelf.
+        // Prefer the stored one; otherwise derive it from the (now unlocked) private key.
+        let pub = readStoredPublicKey();
+        if (!pub) {
+            try {
+                pub = decryptedKey.toPublic().armor();
+                localStorage.setItem(LS_PUBLIC_KEY, pub);
+            } catch {
+                pub = null;
+            }
+        }
+        if (pub) {
+            setOwnPublicKeyArmored(pub);
+        }
+
+        setIsLocked(false);
+    }, []);
+
+    const decrypt = useCallback(async (armoredMessage: string): Promise<string> => {
+        const privateKey = privateKeyRef.current;
+        if (!privateKey) {
+            throw new Error('Vault is locked. Unlock with your passphrase to decrypt.');
+        }
+
+        const message = await openpgp.readMessage({ armoredMessage });
+        try {
+            const { data } = await openpgp.decrypt({
+                message,
+                decryptionKeys: privateKey,
+            });
+            return data as string;
+        } catch (err: unknown) {
+            throw new Error(errMessage(err, 'Failed to decrypt message.'));
+        }
+    }, []);
+
+    const encryptFor = useCallback(
+        async (plaintext: string, armoredPublicKeys: string[]): Promise<string> => {
+            if (!armoredPublicKeys || armoredPublicKeys.length === 0) {
+                // Guard against silent lockout: refuse to encrypt with no recipient key.
+                throw new Error('No recipient public key provided for encryption.');
+            }
+            // Delegate to the shared gpg.ts helper (reads keys + encrypts).
+            return encryptMessage(plaintext, armoredPublicKeys);
+        },
+        [],
+    );
+
+    const encryptForSelf = useCallback(
+        async (plaintext: string): Promise<string> => {
+            const pub = ownPublicKeyArmored ?? readStoredPublicKey();
+            if (!pub) {
+                throw new Error(
+                    'Your own public key is unavailable. Unlock your vault before creating a secret.',
+                );
+            }
+            return encryptMessage(plaintext, [pub]);
+        },
+        [ownPublicKeyArmored],
+    );
+
+    const value = useMemo<KeyContextValue>(
+        () => ({
+            isLocked,
+            ownPublicKeyArmored,
+            ownFingerprint,
+            hasStoredKey,
+            setArmoredKeys,
+            unlock,
+            lock,
+            clear,
+            decrypt,
+            encryptFor,
+            encryptForSelf,
+        }),
+        [
+            isLocked,
+            ownPublicKeyArmored,
+            ownFingerprint,
+            hasStoredKey,
+            setArmoredKeys,
+            unlock,
+            lock,
+            clear,
+            decrypt,
+            encryptFor,
+            encryptForSelf,
+        ],
+    );
+
+    return <KeyContext.Provider value={value}>{children}</KeyContext.Provider>;
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
+/** Hook returning KeyContextValue. Throws if used outside KeyProvider. */
+export function useKey(): KeyContextValue {
+    const ctx = useContext(KeyContext);
+    if (!ctx) {
+        throw new Error('useKey() must be used within a <KeyProvider>.');
+    }
+    return ctx;
+}
+
+// ---------------------------------------------------------------------------
+// LockGate — passphrase-only unlock overlay for the authenticated-but-locked state.
+// ---------------------------------------------------------------------------
+/**
+ * Renders an Unlock prompt overlay (passphrase-only) whenever the user is authenticated
+ * (JWT present) but the in-memory key is locked AND a stored armored private key exists.
+ * On successful unlock it continues to children. If no stored key exists, it redirects to /login.
+ * If already unlocked (or not authenticated), it simply renders children.
+ */
+export function LockGate({ children }: { children: ReactNode }): JSX.Element | null {
+    const { isLocked, hasStoredKey, unlock } = useKey();
+    const [passphrase, setPassphrase] = useState('');
+    const [error, setError] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
+
+    const hasJwt = localStorage.getItem(LS_JWT) != null;
+
+    // Authenticated but no stored key to unlock against -> full re-login required.
+    // The redirect MUST be a post-render side effect (mutating location during render is
+    // illegal in React, and doubly so under StrictMode). While this state holds we render
+    // null below so the protected page never mounts or fires its data-loading effects.
+    const needsRelogin = hasJwt && isLocked && !hasStoredKey;
+    useEffect(() => {
+        if (needsRelogin && window.location.pathname !== '/login') {
+            window.location.href = '/login';
+        }
+    }, [needsRelogin]);
+
+    // Not authenticated, or already unlocked -> pass through to the app.
+    if (!hasJwt || !isLocked) {
+        return <>{children}</>;
+    }
+
+    // Authenticated but no stored key to unlock against -> render nothing while redirecting.
+    if (!hasStoredKey) {
+        return null;
+    }
+
+    const handleSubmit = async (e: FormEvent) => {
+        e.preventDefault();
+        setError(null);
+        setBusy(true);
+        try {
+            await unlock(passphrase);
+            setPassphrase('');
+        } catch (err: unknown) {
+            setError(errMessage(err, 'Failed to unlock.'));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div
+            style={{
+                position: 'fixed',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(0, 0, 0, 0.6)',
+                backdropFilter: 'blur(6px)',
+                zIndex: 1000,
+            }}
+        >
+            <form
+                onSubmit={handleSubmit}
+                className="glass-panel animate-fade-in"
+                style={{
+                    width: '100%',
+                    maxWidth: '380px',
+                    padding: '2rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1rem',
+                }}
+            >
+                <h2 style={{ margin: 0 }}>Unlock your vault</h2>
+                <p style={{ margin: 0, opacity: 0.7, fontSize: '0.9rem' }}>
+                    Enter your passphrase to decrypt your private key. It stays in memory only.
+                </p>
+
+                {error && (
+                    <div
+                        style={{
+                            background: 'rgba(248, 81, 73, 0.1)',
+                            color: 'var(--danger-color)',
+                            border: '1px solid var(--danger-color)',
+                            borderRadius: '8px',
+                            padding: '0.6rem 0.8rem',
+                            fontSize: '0.85rem',
+                        }}
+                    >
+                        {error}
+                    </div>
+                )}
+
+                <div className="form-group">
+                    <label className="form-label" htmlFor="lockgate-passphrase">
+                        Passphrase
+                    </label>
+                    <input
+                        id="lockgate-passphrase"
+                        className="form-control"
+                        type="password"
+                        autoFocus
+                        autoComplete="current-password"
+                        value={passphrase}
+                        onChange={(e) => setPassphrase(e.target.value)}
+                        disabled={busy}
+                    />
+                </div>
+
+                <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={busy || passphrase.length === 0}
+                >
+                    {busy ? 'Unlocking…' : 'Unlock'}
+                </button>
+            </form>
+        </div>
+    );
+}
