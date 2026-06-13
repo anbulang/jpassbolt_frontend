@@ -134,8 +134,13 @@ export async function loginWithGpg(
         throw new Error('Server did not return a challenge token (X-GPGAuth-User-Auth-Token header missing)');
     }
 
-    // Decode the URL-encoded armored PGP message
-    const decodedToken = decodeURIComponent(encryptedToken);
+    // Decode the URL-encoded armored PGP message. The server encodes the header
+    // with PHP urlencode() semantics: spaces become '+' and real '+' become '%2B'.
+    // decodeURIComponent() alone does NOT turn '+' back into a space, which would
+    // leave the armor header as "-----BEGIN+PGP+MESSAGE-----" and make openpgp throw
+    // "Unknown ASCII armor type". Replace '+' with space first; the genuine base64
+    // '+' arrive as '%2B' and are restored by decodeURIComponent.
+    const decodedToken = decodeURIComponent(encryptedToken.replace(/\+/g, ' '));
 
     // Decrypt the challenge using our private key
     let decryptedNonce;
