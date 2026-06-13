@@ -39,7 +39,7 @@ import { useToast } from '../components/toastContext';
 import { FullSpinner, Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import FolderTree from '../components/FolderTree';
+import FolderTree, { RESOURCE_DRAG_MIME } from '../components/FolderTree';
 import ShareDialog from '../components/ShareDialog';
 import { useVaultData } from './vault/useVaultData';
 import { SecretPanel } from './vault/SecretPanel';
@@ -92,6 +92,8 @@ export default function Vault() {
   const [deleteTarget, setDeleteTarget] = useState<Resource | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [favBusyId, setFavBusyId] = useState<string | null>(null);
+  // Drag-to-move: id of the resource row currently being dragged (subtle affordance).
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
   useEffect(() => {
     getResourceTypes()
@@ -227,6 +229,10 @@ export default function Vault() {
               setFavoritesOnly(on);
               if (on) setSelectedFolderId(null);
             }}
+            // Refresh the center list + folder-membership filter only after the
+            // move has actually persisted (FolderTree calls this post-await), so
+            // refetch sees the new location instead of racing the pending PUT.
+            onResourceMoved={() => void refetch()}
           />
         </div>
 
@@ -287,7 +293,31 @@ export default function Vault() {
                   {filtered.map((resource) => (
                     <tr
                       key={resource.id}
-                      style={{ cursor: 'pointer' }}
+                      draggable
+                      onDragStart={(e) => {
+                        // Drag source contract (consumed by FolderTree's drop):
+                        // primary typed MIME key, plus a text/plain fallback,
+                        // both carrying the resource UUID; effectAllowed='move'
+                        // so the folder row's dropEffect='move' is honored.
+                        e.dataTransfer.setData(RESOURCE_DRAG_MIME, resource.id);
+                        e.dataTransfer.setData('text/plain', resource.id);
+                        e.dataTransfer.effectAllowed = 'move';
+                        setDraggingId(resource.id);
+                      }}
+                      onDragEnd={() => {
+                        // Only clear the drag affordance here. The Vault refresh
+                        // is driven by FolderTree's onResourceMoved callback,
+                        // which fires AFTER the move PUT resolves — reading the
+                        // brittle dragend dropEffect would race the pending move
+                        // (and misfire on failed/reset drops).
+                        setDraggingId(null);
+                      }}
+                      title="Drag onto a folder to move"
+                      style={{
+                        cursor: 'pointer',
+                        opacity: draggingId === resource.id ? 0.45 : 1,
+                        transition: 'opacity var(--transition-fast)',
+                      }}
                       onClick={() => setViewing(resource)}
                     >
                       <td>
@@ -413,11 +443,12 @@ export default function Vault() {
         }}
       />
 
-      {/* Share dialog */}
+      {/* Share dialog — pass the whole Resource so the title shows the name and
+          the dialog self-loads & manages the current access list (ACL). */}
       {sharing && (
         <ShareDialog
           open={!!sharing}
-          resourceId={sharing.id}
+          resource={sharing}
           onClose={(didChange) => {
             setSharing(null);
             if (didChange) void refetch();

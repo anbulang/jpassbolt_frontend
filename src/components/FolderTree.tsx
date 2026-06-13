@@ -77,6 +77,14 @@ export interface FolderTreeProps {
   favoritesOnly?: boolean;
   /** Toggle the parent's favorites-only filter. */
   onToggleFavorites?: (on: boolean) => void;
+  /**
+   * Called after a drag-dropped resource has been successfully moved (the
+   * PUT /move/Resource has resolved). The parent uses this to refresh the
+   * Vault list/folder-membership against post-move server state. Driving the
+   * refresh from move COMPLETION (not the dragend dropEffect) avoids racing
+   * the still-pending move request.
+   */
+  onResourceMoved?: () => void;
 }
 
 /**
@@ -147,6 +155,7 @@ export default function FolderTree({
   onSelect,
   favoritesOnly = false,
   onToggleFavorites,
+  onResourceMoved,
 }: FolderTreeProps) {
   const toast = useToast();
   const activeId = selectedFolderId !== undefined ? selectedFolderId : (selectedId ?? null);
@@ -356,11 +365,15 @@ export default function FolderTree({
         toast.success(`Moved password to ${folderName(destinationFolderId)}.`);
         // Refetch so child-count / membership stays correct for the tree.
         await load();
+        // Notify the parent only AFTER the move has persisted, so its refresh
+        // runs against post-move server state (avoids the dragend race where
+        // the move PUT is still pending).
+        onResourceMoved?.();
       } catch (err) {
         toast.error(errMessage(err, 'Failed to move password.'));
       }
     },
-    [folderName, load, toast],
+    [folderName, load, onResourceMoved, toast],
   );
 
   const onRowDragOver = useCallback((e: DragEvent) => {

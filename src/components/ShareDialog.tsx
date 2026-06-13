@@ -116,6 +116,12 @@ interface DraftRow {
     aro: 'User' | 'Group';
     aroForeignKey: string;
     type: PermissionType;
+    /**
+     * The permission level this existing row started with (undefined for rows
+     * added in this session). Used to detect a level-only change so Apply is
+     * enabled and the changed level is actually sent.
+     */
+    originalType?: PermissionType;
     /** True for AROs added in this session (need a re-encrypted secret on apply). */
     isNew: boolean;
     /** Marked for removal. */
@@ -175,6 +181,7 @@ function seedRowFromPermission(p: Permission | PermissionWithAro): DraftRow {
         aro: p.aro,
         aroForeignKey: p.aro_foreign_key,
         type: p.type,
+        originalType: p.type,
         isNew: false,
         deleted: false,
         // Default to the UUID as a placeholder; replaced below if we have an
@@ -484,9 +491,13 @@ export function ShareDialog({
                 });
             } else if (row.permissionId) {
                 if (row.deleted) {
+                    // Removal: id + delete flag (no re-encryption needed).
                     items.push({ id: row.permissionId, delete: true });
-                } else {
-                    // Send the (possibly changed) level for existing permissions.
+                } else if (row.originalType === undefined || row.type !== row.originalType) {
+                    // Level change on an existing permission: id + the new type
+                    // (lowering/raising a level needs no re-encryption). Unchanged
+                    // existing permissions are intentionally omitted so the payload
+                    // expresses only real changes (added / changed / removed).
                     items.push({
                         id: row.permissionId,
                         aro: row.aro,
@@ -506,7 +517,15 @@ export function ShareDialog({
     );
 
     const hasChanges = useMemo(() => {
-        return rows.some((r) => (r.isNew && !r.deleted) || (r.permissionId && r.deleted));
+        return rows.some(
+            (r) =>
+                // a newly added ARO that is still present
+                (r.isNew && !r.deleted) ||
+                // an existing permission marked for removal
+                (r.permissionId && r.deleted) ||
+                // an existing permission whose level was changed
+                (r.permissionId && !r.deleted && r.originalType !== undefined && r.type !== r.originalType),
+        );
     }, [rows]);
 
     // -----------------------------------------------------------------------
