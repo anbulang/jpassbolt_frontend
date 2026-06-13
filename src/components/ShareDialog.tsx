@@ -2,9 +2,14 @@
  * ShareDialog (smart component).
  *
  * Modal to share a single resource with users and groups. Flow:
- *   1. Load the resource's current permissions (via /share/search-aros context +
- *      the existing permission set passed in / re-derived) so the draft starts
- *      from the real ACL.
+ *   1. On open, LOAD the resource's current ACL itself via
+ *      GET /permissions/resource/{id}.json (contain[user]/[user.profile]/[group]),
+ *      so the draft starts from the real, human-readable access list — the
+ *      caller (e.g. the Vault page) only needs to pass the resource. Embedded
+ *      user/group display data is used directly; any ARO the endpoint could not
+ *      embed is resolved via the users / groups service as a fallback. A caller
+ *      MAY still pass `existingPermissions` to seed synchronously and skip the
+ *      fetch (e.g. when it already holds them).
  *   2. Search AROs (users + groups) via GET /share/search-aros.json with a
  *      debounced query; clicking an ARO adds a draft row with a permission level
  *      (READ=1 / UPDATE=7 / OWNER=15).
@@ -50,6 +55,7 @@ import { useToast } from './toastContext';
 import { useKey } from '../crypto/KeyContext';
 
 import { searchAros, applyShare, simulateShare } from '../services/share';
+import { getResourcePermissions } from '../services/permissions';
 import { getSecretForResource } from '../services/secrets';
 import { getUser } from '../services/users';
 import { getGroup } from '../services/groups';
@@ -62,6 +68,7 @@ import {
     type Group,
     type Permission,
     type PermissionType,
+    type PermissionWithAro,
     type Resource,
     type SecretWrite,
     type SharePermissionItem,
@@ -86,10 +93,14 @@ export interface ShareDialogProps {
     resourceId?: string;
     /**
      * Existing permissions for the resource, if the caller already loaded them
-     * (e.g. resource.permissions). When omitted, the dialog starts with an
-     * empty current-permission list and only manages additions.
+     * (e.g. resource.permissions). OPTIONAL — when provided, the dialog seeds
+     * synchronously from these and SKIPS its own fetch; when omitted (the
+     * preferred path), the dialog fetches the full ACL itself via
+     * GET /permissions/resource/{id}.json on open. Pass either a plain
+     * `Permission[]` or the enriched `PermissionWithAro[]` (embedded user/group
+     * display objects are used when present).
      */
-    existingPermissions?: Permission[];
+    existingPermissions?: Permission[] | PermissionWithAro[];
     /** Close handler. Receives whether a share was actually applied. */
     onClose: (didChange?: boolean) => void;
     /** Called after a successful share (in addition to onClose(true)). */
@@ -151,6 +162,45 @@ function aroDisplay(aro: Aro): { label: string; sublabel?: string } {
     };
 }
 
+/**
+ * Build a seeded DraftRow from a permission row, using the ARO display objects
+ * the permissions endpoint embedded when available (no extra round-trip), and
+ * falling back to a UUID placeholder otherwise (the resolver effect replaces it
+ * with a name). Always marked isNew:false / deleted:false — it's existing ACL.
+ */
+function seedRowFromPermission(p: Permission | PermissionWithAro): DraftRow {
+    const embedded = p as PermissionWithAro;
+    const base: DraftRow = {
+        permissionId: p.id,
+        aro: p.aro,
+        aroForeignKey: p.aro_foreign_key,
+        type: p.type,
+        isNew: false,
+        deleted: false,
+        // Default to the UUID as a placeholder; replaced below if we have an
+        // embedded object, or later by the resolver effect (never show raw UUIDs).
+        label: p.aro_foreign_key,
+        sublabel: p.aro === 'Group' ? 'Group' : 'User',
+    };
+
+    if (p.aro === 'User' && embedded.user) {
+        const { label, sublabel } = aroDisplay(embedded.user);
+        const profile = embedded.user.profile;
+        return {
+            ...base,
+            label,
+            sublabel,
+            avatarSrc: profile?.avatar?.url?.small ?? null,
+            firstName: profile?.first_name ?? null,
+            lastName: profile?.last_name ?? null,
+        };
+    }
+    if (p.aro === 'Group' && embedded.group) {
+        return { ...base, label: embedded.group.name, sublabel: 'Group' };
+    }
+    return base;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -176,6 +226,10 @@ export function ShareDialog({
 
     // --- draft permission state ---
     const [rows, setRows] = useState<DraftRow[]>([]);
+    // Loading / error state for the initial ACL fetch (when the dialog loads its
+    // own permissions rather than receiving them via existingPermissions).
+    const [loadingPermissions, setLoadingPermissions] = useState(false);
+    const [permissionsError, setPermissionsError] = useState<string | null>(null);
 
     // --- simulate state ---
     const [simulating, setSimulating] = useState(false);
@@ -190,7 +244,18 @@ export function ShareDialog({
     const searchSeq = useRef(0);
 
     // -----------------------------------------------------------------------
-    // Reset everything when (re)opened, and seed from existing permissions.
+    // Reset everything when (re)opened, then seed the current ACL.
+    //
+    // Preferred path (caller passes only the resource): fetch the full ACL
+    // ourselves via GET /permissions/resource/{id}.json with the user/group
+    // contains, so we DISPLAY who already has access with human-readable names
+    // and avatars straight from the embedded objects — no per-ARO round-trip in
+    // the common case. Fallback: a caller MAY pass `existingPermissions` to seed
+    // synchronously and skip the fetch entirely.
+    //
+    // Any ARO the endpoint could not embed (e.g. soft-deleted group, or a caller
+    // that passed bare Permission[]) keeps a UUID placeholder that the resolver
+    // effect below replaces with a name.
     // -----------------------------------------------------------------------
     useEffect(() => {
         if (!open) return;
@@ -202,29 +267,64 @@ export function ShareDialog({
         setSimulating(false);
         setApplying(false);
         setAroNames({});
+        setPermissionsError(null);
 
-        const seed: DraftRow[] = (existingPermissions ?? []).map((p) => ({
-            permissionId: p.id,
-            aro: p.aro,
-            aroForeignKey: p.aro_foreign_key,
-            type: p.type,
-            isNew: false,
-            deleted: false,
-            // Start with the UUID as a placeholder; a resolver effect below replaces
-            // it with a human-readable name (never show raw UUIDs to the user).
-            label: p.aro_foreign_key,
-            sublabel: p.aro === 'Group' ? 'Group' : 'User',
-        }));
-        setRows(seed);
-    }, [open, resource, existingPermissions]);
+        // Caller pre-loaded the ACL: seed synchronously and skip the fetch.
+        if (existingPermissions) {
+            setLoadingPermissions(false);
+            setRows(existingPermissions.map(seedRowFromPermission));
+            return;
+        }
+
+        // No id to fetch against: nothing to load (only additions are possible).
+        if (!resourceId) {
+            setLoadingPermissions(false);
+            setRows([]);
+            return;
+        }
+
+        // Fetch the full ACL ourselves.
+        let cancelled = false;
+        setLoadingPermissions(true);
+        setRows([]);
+        (async () => {
+            try {
+                const perms = await getResourcePermissions(resourceId, {
+                    containUser: true,
+                    containUserProfile: true,
+                    containGroup: true,
+                });
+                if (cancelled) return;
+                setRows(perms.map(seedRowFromPermission));
+                setPermissionsError(null);
+            } catch (err: unknown) {
+                if (cancelled) return;
+                // Don't block sharing if the ACL couldn't be read — the user can
+                // still add people; we just couldn't show the current access.
+                setPermissionsError(
+                    errMessage(err, 'Could not load the current access list for this resource.'),
+                );
+                setRows([]);
+            } finally {
+                if (!cancelled) setLoadingPermissions(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+        // Re-seed whenever the dialog opens for a (possibly) different resource or
+        // a caller swaps in a different pre-loaded permission set.
+    }, [open, resourceId, existingPermissions]);
 
     // -----------------------------------------------------------------------
     // Resolve human-readable names for any seeded existing-permission rows whose
-    // label is still the raw aro_foreign_key UUID. Callers that DON'T pass
-    // existingPermissions (e.g. the Vault page) simply have no rows to resolve.
+    // label is still the raw aro_foreign_key UUID (i.e. the permissions endpoint
+    // could not embed the ARO, or a caller passed bare Permission[]). Rows whose
+    // names came from embedded objects are already resolved and skipped.
     // -----------------------------------------------------------------------
     useEffect(() => {
         if (!open) return;
+        if (loadingPermissions) return; // wait for the ACL fetch to settle first
         const unresolved = rows.filter(
             (r) => !r.isNew && r.label === r.aroForeignKey,
         );
@@ -260,10 +360,10 @@ export function ShareDialog({
         return () => {
             cancelled = true;
         };
-        // Run once per open per seeded row set; rows identity changes as the user
-        // edits but the guard (`label === aroForeignKey`) prevents redundant work.
+        // Runs after seeding settles; the guard (`label === aroForeignKey`)
+        // prevents redundant work as the user edits rows.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, existingPermissions]);
+    }, [open, loadingPermissions]);
 
     // -----------------------------------------------------------------------
     // Debounced ARO search.
@@ -786,11 +886,22 @@ export function ShareDialog({
             {/* ---- Current / draft permissions ---- */}
             <div style={{ marginBottom: 8 }}>
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 8 }}>
-                    Permissions
+                    Who has access
                 </div>
-                {rows.length === 0 ? (
+                {permissionsError && (
+                    <div style={{ marginBottom: 8 }}>
+                        <Banner variant="error" icon={<AlertTriangle size={16} />}>
+                            {permissionsError}
+                        </Banner>
+                    </div>
+                )}
+                {loadingPermissions ? (
+                    <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 13, border: '1px dashed var(--panel-border)', borderRadius: 'var(--radius-sm)' }}>
+                        <Spinner size={14} /> Loading current access…
+                    </div>
+                ) : rows.length === 0 ? (
                     <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', border: '1px dashed var(--panel-border)', borderRadius: 'var(--radius-sm)' }}>
-                        No permissions yet. Search above to share with people or groups.
+                        No one has access yet. Search above to share with people or groups.
                     </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

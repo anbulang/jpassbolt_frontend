@@ -71,6 +71,30 @@ export interface Permission {
   modified: string;
 }
 
+/**
+ * A permission row from GET /permissions/resource/{id}.json with the optional
+ * embedded ARO display objects the endpoint includes when the matching
+ * `contain[...]` flag is requested.
+ *
+ * - `user` is present only on `aro === 'User'` rows AND when contain[user] or
+ *   contain[user.profile] was sent (the nested `profile` only with
+ *   contain[user.profile]).
+ * - `group` is present only on `aro === 'Group'` rows AND when contain[group]
+ *   was sent.
+ *
+ * Both may still be `null` / absent if the server could not resolve the ARO
+ * (e.g. a soft-deleted group), so consumers must tolerate their absence and
+ * fall back to resolving `aro_foreign_key` via the users / groups service. This
+ * is purely a display-enrichment type — it extends, and never replaces, the
+ * base `Permission` shape used everywhere else.
+ */
+export interface PermissionWithAro extends Permission {
+  /** Embedded user (User ARO + contain[user] / contain[user.profile]). */
+  user?: User | null;
+  /** Embedded group (Group ARO + contain[group]). */
+  group?: Group | null;
+}
+
 // ---------------------------------------------------------------------------
 // Resources & secrets
 // ---------------------------------------------------------------------------

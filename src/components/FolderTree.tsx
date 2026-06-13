@@ -103,11 +103,22 @@ function errMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
-/** Read a dragged resource id from a drop event (MIME first, then text/plain). */
+/**
+ * Read a dragged resource id from a drop event.
+ *
+ * Contract a drag source must satisfy (set both on `dragstart`):
+ *   e.dataTransfer.setData(RESOURCE_DRAG_MIME, resourceId);  // primary
+ *   e.dataTransfer.setData('text/plain', resourceId);        // fallback
+ *
+ * The typed MIME is preferred; `text/plain` is the fallback so the drop still
+ * works for a source that only set plain text. Values are trimmed and an empty
+ * MIME value falls through to the fallback (so a source that registers the MIME
+ * but writes a blank value does not cause a silent no-op move).
+ */
 function readDroppedResourceId(e: DragEvent): string | null {
-  const typed = e.dataTransfer.getData(RESOURCE_DRAG_MIME);
+  const typed = e.dataTransfer.getData(RESOURCE_DRAG_MIME).trim();
   if (typed) return typed;
-  const plain = e.dataTransfer.getData('text/plain');
+  const plain = e.dataTransfer.getData('text/plain').trim();
   return plain || null;
 }
 
