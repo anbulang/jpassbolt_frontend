@@ -255,6 +255,34 @@ export function ResourceFormModal({
     };
   }, [open]);
 
+  // -------------------------------------------------------------------------
+  // Create mode: keep the selected resource type VALID as the org policy loads.
+  //
+  // The form-init effect above picks a default type from `typeOptions` while
+  // `typesSettings` is still null — i.e. the v4 slugs. When the policy then
+  // arrives and flips the offered types to v5, the previously-selected v4 type id
+  // is no longer in `typeOptions`, but the guarded init effect never re-runs, so
+  // the form stayed pinned to a v4 type and decideResourceFormat wrongly chose v4
+  // even though the org enabled v5 (race found in real cross-user browser
+  // testing). Re-default whenever the current selection falls out of the offered
+  // set. Guarded to CREATE mode and only when the selection is invalid, so it
+  // never clobbers a deliberate user choice (a still-offered id is left intact).
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!open || isEdit) return;
+    setForm((f) => {
+      if (f.resourceTypeId && typeOptions.some((t) => t.id === f.resourceTypeId)) {
+        return f; // current selection still offered — keep it
+      }
+      const def =
+        typeOptions.find((t) => t.slug === 'v5-default') ??
+        typeOptions.find((t) => t.id === RESOURCE_TYPE_ID.PASSWORD_AND_DESCRIPTION) ??
+        typeOptions.find((t) => t.id === RESOURCE_TYPE_ID.PASSWORD_STRING) ??
+        typeOptions[0];
+      return def ? { ...f, resourceTypeId: def.id } : f;
+    });
+  }, [open, isEdit, typeOptions]);
+
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
