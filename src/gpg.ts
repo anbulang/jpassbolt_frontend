@@ -122,6 +122,54 @@ export async function verifyArmoredKeyFingerprint(
 }
 
 /**
+ * Generate a fresh RSA OpenPGP key pair for account setup / recovery.
+ *
+ * SECURITY: the generated private key is ALWAYS passphrase-protected. We THROW on
+ * an empty passphrase — JPassbolt refuses to mint an unprotected key, because an
+ * unprotected armored private key persisted in localStorage would let anyone with
+ * access to the browser profile unlock the vault with any passphrase (the same
+ * invariant enforced in auth.ts/loginWithGpg and KeyContext.unlock).
+ *
+ * The returned armoredPrivateKey + fingerprint stay CLIENT-SIDE; only the
+ * armoredPublicKey is ever sent to the server (via setup/complete).
+ *
+ * @param opts.name        Full name for the key's user ID (from the profile).
+ * @param opts.email       Email/username for the key's user ID (user.username).
+ * @param opts.passphrase  Passphrase to protect the private key (required, non-empty).
+ * @param opts.rsaBits     RSA key size; defaults to 3072 (faster in-browser; 4096 acceptable but slow).
+ */
+export async function generateKeyPair(opts: {
+    name: string;
+    email: string;
+    passphrase: string;
+    rsaBits?: number;
+}): Promise<{ armoredPrivateKey: string; armoredPublicKey: string; fingerprint: string }> {
+    if (!opts.passphrase || opts.passphrase.length === 0) {
+        throw new Error(
+            'A passphrase is required: JPassbolt refuses to create an unprotected (passphrase-less) private key.',
+        );
+    }
+
+    const { privateKey, publicKey } = await openpgp.generateKey({
+        type: 'rsa',
+        rsaBits: opts.rsaBits ?? 3072,
+        userIDs: [{ name: opts.name, email: opts.email }],
+        passphrase: opts.passphrase,
+        format: 'armored',
+    });
+
+    // Derive the fingerprint from the PUBLIC key via the existing helper
+    // (normalized lowercase hex, no spaces).
+    const fingerprint = await fingerprintOf(publicKey);
+
+    return {
+        armoredPrivateKey: privateKey,
+        armoredPublicKey: publicKey,
+        fingerprint,
+    };
+}
+
+/**
  * Encrypt a text message using one or more public keys.
  * Used when creating/sharing secrets.
  *

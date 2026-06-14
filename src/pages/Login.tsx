@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loginWithGpg } from '../auth';
 import { useKey } from '../crypto/KeyContext';
+import { probeMfaRequired } from '../services/mfa';
+import MfaChallenge from '../components/MfaChallenge';
 import { Vault, KeyRound, Lock, Eye, EyeOff, ShieldCheck, AlertTriangle, LogIn } from 'lucide-react';
 
 export default function Login() {
@@ -10,6 +12,9 @@ export default function Login() {
     const [show, setShow] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    // When the backend enforces MFA after login, we hold the unlocked session and
+    // render <MfaChallenge> instead of navigating; cleared on success/cancel.
+    const [mfaRequired, setMfaRequired] = useState(false);
     const navigate = useNavigate();
     const { setArmoredKeys, unlock } = useKey();
 
@@ -27,6 +32,7 @@ export default function Login() {
         try {
             // 1. 2-stage GPG login: validates the key, gets a JWT, and (in auth.ts) persists
             //    the passphrase-protected armored private key + own armored public key.
+            //    UNCHANGED — the auth/loginWithGpg contract is not touched by the MFA branch.
             await loginWithGpg(armoredPrivateKey, passphrase);
 
             // 2. Persist the armored keys into KeyContext's localStorage contract (idempotent
@@ -36,7 +42,16 @@ export default function Login() {
             setArmoredKeys(armoredPrivateKey);
             await unlock(passphrase);
 
-            // 3. Enter the vault.
+            // 3. Post-login MFA gate (additive, non-blocking on the happy path): probe whether
+            //    the backend requires a second factor for this session. If it does, render the
+            //    TOTP challenge instead of navigating; otherwise enter the vault as before.
+            const required = await probeMfaRequired();
+            if (required) {
+                setMfaRequired(true);
+                return; // <MfaChallenge> takes over; onVerified() navigates to '/'.
+            }
+
+            // 4. Enter the vault (no MFA, or probe inconclusive — happy path unchanged).
             navigate('/');
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : '';
@@ -45,6 +60,20 @@ export default function Login() {
             setLoading(false);
         }
     };
+
+    // MFA gate active: the JWT session exists + the key is unlocked, but the backend
+    // requires a TOTP code before the vault is reachable. Render the challenge.
+    if (mfaRequired) {
+        return (
+            <MfaChallenge
+                onVerified={() => navigate('/')}
+                onCancel={() => {
+                    setMfaRequired(false);
+                    setError('已取消两步验证，可重新登录。');
+                }}
+            />
+        );
+    }
 
     return (
         <div className="flow-overlay">
