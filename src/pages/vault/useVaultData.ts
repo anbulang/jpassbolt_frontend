@@ -45,7 +45,11 @@ export function useVaultData(): VaultData {
     setError(null);
     try {
       const [res, fol] = await Promise.all([
-        listResources({ containFavorite: true }),
+        // containMetadata asks the server for the encrypted v5 `metadata` blob so
+        // useResolvedResources can decrypt + display v5 rows transparently. It is
+        // forward-compatible: the backend ignores it under v4 (task-2 gap), so v4
+        // rows are unaffected today.
+        listResources({ containFavorite: true, containMetadata: true }),
         // children_resources lets us compute folder membership locally.
         listFolders({ childrenResources: true }).catch(() => [] as Folder[]),
       ]);

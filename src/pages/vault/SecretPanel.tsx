@@ -16,6 +16,7 @@ import { useToast } from '../../components/toastContext';
 import { Spinner } from '../../components/Spinner';
 import { PasswordField } from '../../components/PasswordField';
 import { decodeSecret, isEncryptedDescriptionType } from './secretFormat';
+import { isV5Resource } from './resourceMetadata';
 
 interface SecretPanelProps {
   resource: Resource | null;
@@ -62,7 +63,14 @@ export function SecretPanel({
   const [error, setError] = useState<string | null>(null);
 
   const slug = resourceTypes.find((rt) => rt.id === resource?.resource_type_id)?.slug;
-  const usesEncryptedDescription = isEncryptedDescriptionType(slug);
+  // v5 resources carry their description inside the (already-resolved) encrypted
+  // metadata blob, which Vault.tsx projects onto resource.description. They must
+  // NEVER read the encrypted-secret description path even when the resource-type
+  // slug would otherwise imply it, so guard the encrypted-description branch on
+  // the resource being v4. Use the single isV5Resource() discriminator (shared
+  // with the resolver) so there is ONE definition of "is this a v5 resource".
+  const isV5 = resource != null && isV5Resource(resource);
+  const usesEncryptedDescription = !isV5 && isEncryptedDescriptionType(slug);
 
   const wipe = useCallback(() => {
     setPassword('');

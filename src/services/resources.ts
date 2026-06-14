@@ -18,6 +18,14 @@ export interface ListResourcesOptions {
   favorite?: boolean;
   /** contain[favorite]=1 — include each resource's favorite status. */
   containFavorite?: boolean;
+  /**
+   * contain[metadata]=1 — ask the server to include the encrypted v5 `metadata`
+   * blob (+ metadata_key_id/metadata_key_type) for v5 rows so the vault can
+   * decrypt and display them format-transparently. Forward-compatible and
+   * harmless under v4 (the backend ignores it until task-2 wires metadata into
+   * the resource DTO).
+   */
+  containMetadata?: boolean;
 }
 
 /** GET /resources.json — non-deleted resources with READ access. */
@@ -30,6 +38,9 @@ export async function listResources(
   }
   if (opts.containFavorite) {
     params['contain[favorite]'] = '1';
+  }
+  if (opts.containMetadata) {
+    params['contain[metadata]'] = '1';
   }
   const res = await api.get<ApiResponse<Resource[]>>('/resources.json', { params });
   return res.data.body ?? [];

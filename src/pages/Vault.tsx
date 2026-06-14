@@ -42,6 +42,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import FolderTree, { RESOURCE_DRAG_MIME } from '../components/FolderTree';
 import ShareDialog from '../components/ShareDialog';
 import { useVaultData } from './vault/useVaultData';
+import { useResolvedResources } from './vault/useResolvedResources';
 import { SecretPanel } from './vault/SecretPanel';
 import { ResourceFormModal } from './vault/ResourceFormModal';
 
@@ -76,6 +77,12 @@ export default function Vault() {
     refetch,
   } = useVaultData();
 
+  // Format-transparent display projection: v4 rows pass through untouched; v5
+  // rows have their encrypted metadata decrypted in-memory and projected back
+  // onto the same name/username/uri/description keys, so all the filter/table
+  // code below is unchanged. `resolving` is true while v5 rows decrypt.
+  const { display, resolving } = useResolvedResources(resources);
+
   const [resourceTypes, setResourceTypes] = useState<ResourceType[]>([]);
 
   // Filters
@@ -101,19 +108,20 @@ export default function Vault() {
       .catch(() => setResourceTypes([]));
   }, []);
 
-  // Keep the open drawer/edit modal in sync with refreshed data.
+  // Keep the open drawer/edit modal in sync with refreshed (and resolved) data,
+  // so a v5 row's drawer shows decrypted fields once they land.
   useEffect(() => {
     if (viewing) {
-      const fresh = resources.find((r) => r.id === viewing.id) ?? null;
+      const fresh = display.find((r) => r.id === viewing.id) ?? null;
       if (fresh !== viewing) setViewing(fresh);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resources]);
+  }, [display]);
 
   const filtered = useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase();
     const folderSet = selectedFolderId ? folderMembership.get(selectedFolderId) : null;
-    return resources.filter((r) => {
+    return display.filter((r) => {
       if (favoritesOnly && !r.favorite) return false;
       if (folderSet && !folderSet.has(r.id)) return false;
       if (!q) return true;
@@ -123,7 +131,7 @@ export default function Vault() {
         r.uri.toLowerCase().includes(q)
       );
     });
-  }, [resources, debouncedSearch, favoritesOnly, selectedFolderId, folderMembership]);
+  }, [display, debouncedSearch, favoritesOnly, selectedFolderId, folderMembership]);
 
   const toggleFavorite = async (resource: Resource) => {
     setFavBusyId(resource.id);
@@ -195,6 +203,20 @@ export default function Vault() {
           style={{ paddingLeft: 36 }}
         />
       </div>
+      {resolving && (
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            color: 'var(--text-muted)',
+            fontSize: '13px',
+          }}
+          title="Decrypting metadata…"
+        >
+          <Spinner size={14} /> Decrypting…
+        </span>
+      )}
       <button
         type="button"
         className={`btn ${favoritesOnly ? 'btn-primary' : 'btn-secondary'}`}

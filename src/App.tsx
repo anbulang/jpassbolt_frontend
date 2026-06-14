@@ -5,6 +5,7 @@ import Vault from './pages/Vault';
 import Users from './pages/Users';
 import Groups from './pages/Groups';
 import Settings from './pages/Settings';
+import EncryptedMetadataSettings from './pages/EncryptedMetadataSettings';
 import Layout from './components/Layout';
 import { LockGate, LS_JWT } from './crypto/KeyContext';
 
@@ -49,6 +50,13 @@ function App() {
         <Route path="/users" element={<Users />} />
         <Route path="/groups" element={<Groups />} />
         <Route path="/settings" element={<Settings />} />
+        {/* Admin-only encrypted-metadata config (the page self-gates on admin
+            role and redirects non-admins). Inherits ProtectedRoute + LockGate +
+            Layout from this route group. */}
+        <Route
+          path="/settings/encrypted-metadata"
+          element={<EncryptedMetadataSettings />}
+        />
       </Route>
 
       {/* Fallback */}

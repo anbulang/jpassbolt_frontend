@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
     ShieldCheck,
@@ -6,10 +6,12 @@ import {
     Users,
     UsersRound,
     Settings,
+    KeyRound,
     LogOut,
     type LucideProps,
 } from 'lucide-react';
 import { logout } from '../auth';
+import { getMe } from '../services/profile';
 import { Avatar } from './Avatar';
 
 interface NavItem {
@@ -25,6 +27,17 @@ const NAV_ITEMS: NavItem[] = [
     { label: 'Groups', path: '/groups', icon: UsersRound },
     { label: 'Settings', path: '/settings', icon: Settings },
 ];
+
+/**
+ * Admin-only nav entry for the encrypted-metadata config panel. Appended to
+ * NAV_ITEMS only once the network role check confirms admin (the LS blob is not
+ * a trusted role source). Plain label — no v4/v5 badge in the main nav.
+ */
+const ADMIN_NAV_ITEM: NavItem = {
+    label: 'Encrypted metadata',
+    path: '/settings/encrypted-metadata',
+    icon: KeyRound,
+};
 
 interface CurrentUser {
     username?: string;
@@ -61,6 +74,30 @@ export function Layout({ children, topbarSlot }: LayoutProps) {
         'Account';
     const avatarUrl = user?.profile?.avatar?.url?.small ?? null;
 
+    // Resolve the admin nav entry from the NETWORK role (GET /users/me.json),
+    // not the LS blob which is not a trusted role source. The page itself also
+    // self-gates, so a momentary missing entry never grants access.
+    const [isAdmin, setIsAdmin] = useState(false);
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const me = await getMe();
+                if (!cancelled) setIsAdmin(me.role?.name === 'admin');
+            } catch {
+                if (!cancelled) setIsAdmin(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    const navItems = useMemo(
+        () => (isAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS),
+        [isAdmin],
+    );
+
     return (
         <div className="app-shell">
             <aside className="sidebar">
@@ -70,7 +107,7 @@ export function Layout({ children, topbarSlot }: LayoutProps) {
                 </div>
 
                 <nav className="sidebar-nav">
-                    {NAV_ITEMS.map(({ label, path, icon: Icon }) => (
+                    {navItems.map(({ label, path, icon: Icon }) => (
                         <NavLink
                             key={path}
                             to={path}

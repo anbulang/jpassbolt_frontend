@@ -138,6 +138,18 @@ export interface Resource {
    * that mode) when the resource is not a favorite of the current user.
    */
   favorite?: Favorite | null;
+  /**
+   * v5 metadata (see "v5 metadata" section below). STRICTLY OPTIONAL — the
+   * backend does not emit these today (task-2 gap), and a v4 resource never
+   * carries them. When present (v5 resource), `name`/`username`/`uri`/
+   * `description` live encrypted inside `metadata` instead of these columns,
+   * and the format-transparent resolver projects them back. `metadata` is the
+   * armored PGP MESSAGE; `metadata_key_id`/`metadata_key_type` say which key
+   * decrypts it.
+   */
+  metadata?: string | null;
+  metadata_key_id?: string | null;
+  metadata_key_type?: MetadataKeyType | null;
 }
 
 export interface ResourceCreateRequest {
@@ -149,6 +161,15 @@ export interface ResourceCreateRequest {
   /** Destination folder in the creator's tree; omit / null = root. */
   folder_parent_id?: string;
   secrets?: SecretWrite[];
+  /**
+   * v5 metadata write triple (optional). When the org policy selects v5 AND a
+   * usable metadata key exists, the form sends these INSTEAD of the cleartext
+   * `name`/`username`/`uri`/`description` fields. Strictly optional so the v4
+   * cleartext path is unchanged.
+   */
+  metadata?: string | null;
+  metadata_key_id?: string | null;
+  metadata_key_type?: MetadataKeyType | null;
 }
 
 export interface ResourceUpdateRequest {
@@ -158,6 +179,10 @@ export interface ResourceUpdateRequest {
   description?: string;
   resource_type_id?: string;
   secrets?: SecretWrite[];
+  /** v5 metadata write triple (optional). See ResourceCreateRequest. */
+  metadata?: string | null;
+  metadata_key_id?: string | null;
+  metadata_key_type?: MetadataKeyType | null;
 }
 
 export interface ResourceType {
@@ -481,3 +506,118 @@ export interface ServerSettings {
   domain?: string;
   [k: string]: unknown;
 }
+
+// ---------------------------------------------------------------------------
+// v5 metadata
+//
+// Passbolt v5 moves a resource's name/username/uri/description out of cleartext
+// DB columns and into an end-to-end-encrypted `metadata` blob. The blob is
+// encrypted EITHER to the user's own GPG key (`metadata_key_type: 'user_key'`)
+// OR to a shared organization "metadata key" (`'shared_key'`). The shapes here
+// mirror the backend DTOs (MetadataKeyDto / MetadataSettingsDto) and the
+// reference plugin verbatim. All field names are snake_case to match the wire.
+//
+// IMPORTANT: this is a transparent layer — the UI never surfaces a v4-vs-v5
+// distinction. These types exist so the resolver (read) and form (write) can
+// translate between encrypted metadata and the plain Resource display fields.
+// ---------------------------------------------------------------------------
+
+/**
+ * How a v5 resource's `metadata` blob is encrypted:
+ *  - `shared_key` -> encrypted to a shared org metadata key (metadata_keys row);
+ *    `metadata_key_id` references that metadata_keys.id.
+ *  - `user_key`   -> encrypted to the user's own GPG key (personal item);
+ *    `metadata_key_id` references the user's gpgkeys.id.
+ */
+export type MetadataKeyType = 'user_key' | 'shared_key';
+
+/**
+ * A row from GET /metadata/keys.json. `armored_key` is the shared metadata
+ * key's PUBLIC half (used to ENCRYPT new metadata). The current user's
+ * encrypted copy of the corresponding PRIVATE half arrives inside
+ * `metadata_private_keys` only when contain[metadata_private_keys]=1 is sent
+ * (and is scoped server-side to the current user). The active key is the row
+ * with `expired === null && deleted === null`.
+ */
+export interface MetadataKey {
+  id: string;
+  fingerprint: string;
+  /** Armored PUBLIC key of the shared metadata key (encrypt to this). */
+  armored_key: string;
+  /** Expiry timestamp; null = active. */
+  expired: string | null;
+  /** Soft-delete timestamp; null = active. */
+  deleted: string | null;
+  created: string;
+  modified: string;
+  created_by: string;
+  modified_by: string;
+  /**
+   * The current user's encrypted copies of this shared key's private half.
+   * Present only with contain[metadata_private_keys]=1; scoped to the user.
+   */
+  metadata_private_keys?: MetadataPrivateKey[];
+}
+
+/**
+ * A user's encrypted copy of a shared metadata key's private half. `data` is an
+ * armored PGP MESSAGE that, once decrypted with the user's own GPG key, yields a
+ * PASSBOLT_METADATA_PRIVATE_KEY JSON blob carrying the shared key's armored
+ * PRIVATE key (used to DECRYPT shared-key resource metadata).
+ */
+export interface MetadataPrivateKey {
+  id: string;
+  metadata_key_id: string;
+  user_id: string;
+  /** Armored PGP MESSAGE (encrypted to the user's own key). */
+  data: string;
+  created: string;
+  modified: string;
+  created_by: string;
+  modified_by: string;
+}
+
+/** A 'v4'-or-'v5' default-format selector used by the types settings. */
+export type MetadataDefaultType = 'v4' | 'v5';
+
+/**
+ * GET /metadata/types/settings.json — the org's create-format policy. Exactly
+ * 14 fields. Out of the box every default is 'v4', all allow_creation_of_v5_*
+ * are false, all allow_creation_of_v4_* are true, and both up/downgrade flags
+ * are false (so v5 creation is disabled until an admin enables it).
+ */
+export interface MetadataTypesSettings {
+  default_resource_types: MetadataDefaultType;
+  default_folder_type: MetadataDefaultType;
+  default_tag_type: MetadataDefaultType;
+  default_comment_type: MetadataDefaultType;
+  allow_creation_of_v5_resources: boolean;
+  allow_creation_of_v5_folders: boolean;
+  allow_creation_of_v5_tags: boolean;
+  allow_creation_of_v5_comments: boolean;
+  allow_creation_of_v4_resources: boolean;
+  allow_creation_of_v4_folders: boolean;
+  allow_creation_of_v4_tags: boolean;
+  allow_creation_of_v4_comments: boolean;
+  allow_v5_v4_downgrade: boolean;
+  allow_v4_v5_upgrade: boolean;
+}
+
+/**
+ * POST /metadata/types/settings.json write shape. Every field is required by
+ * the spec for the write (the backend persists the full policy object).
+ */
+export type MetadataTypesSettingsUpdate = MetadataTypesSettings;
+
+/**
+ * GET /metadata/keys/settings.json — whether personal (user_key) metadata is
+ * allowed and whether zero-knowledge key sharing is on. Defaults:
+ * allow_usage_of_personal_keys=true, zero_knowledge_key_share=false.
+ */
+export interface MetadataKeysSettings {
+  allow_usage_of_personal_keys: boolean;
+  zero_knowledge_key_share: boolean;
+}
+
+/** POST /metadata/keys/settings.json write shape (both fields required). */
+export type MetadataKeysSettingsUpdate = MetadataKeysSettings;

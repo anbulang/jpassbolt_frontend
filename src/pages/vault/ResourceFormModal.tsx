@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   Folder,
+  MetadataTypesSettings,
   Resource,
   ResourceCreateRequest,
   ResourceType,
@@ -20,17 +21,22 @@ import type {
 } from '../../types';
 import { createResource, updateResource } from '../../services/resources';
 import { getSecretForResource } from '../../services/secrets';
+import { getMetadataTypesSettings } from '../../services/metadata';
 import { useKey } from '../../crypto/KeyContext';
+import { useMetadataKey } from '../../crypto/MetadataKeyContext';
 import { useToast } from '../../components/toastContext';
 import { Modal } from '../../components/Modal';
 import { PasswordField } from '../../components/PasswordField';
 import { Spinner } from '../../components/Spinner';
 import {
   RESOURCE_TYPE_ID,
+  V5_PASSWORD_SLUGS,
+  buildResourceMetadataJson,
   decodeSecret,
   encodeSecret,
   isEncryptedDescriptionType,
 } from './secretFormat';
+import { decideResourceFormat } from './resourceFormat';
 
 interface ResourceFormModalProps {
   open: boolean;
@@ -65,11 +71,34 @@ const EMPTY: FormState = {
   folderParentId: '',
 };
 
-/** Only password-shaped types are offered (TOTP / v5 are out of scope here). */
-function passwordResourceTypes(types: ResourceType[]): ResourceType[] {
-  const allowed = new Set<string>(['password-string', 'password-and-description']);
+/**
+ * Offer the password-shaped resource types the org policy dictates — NEVER a
+ * v4-vs-v5 choice. When the org selects v5 (default_resource_types==='v5' AND
+ * v5 creation allowed), the selector surfaces the v5 slugs; otherwise the v4
+ * slugs. The user only ever sees "Password" / "Password & description"-style
+ * names; the v4/v5 distinction is invisible.
+ */
+function passwordResourceTypes(
+  types: ResourceType[],
+  typesSettings: MetadataTypesSettings | null
+): ResourceType[] {
+  const v5Active =
+    typesSettings?.default_resource_types === 'v5' &&
+    typesSettings.allow_creation_of_v5_resources === true;
+  const allowed = new Set<string>(
+    v5Active
+      ? (V5_PASSWORD_SLUGS as readonly string[])
+      : ['password-string', 'password-and-description']
+  );
   const filtered = types.filter((t) => allowed.has(t.slug) && !t.deleted);
-  return filtered.length > 0 ? filtered : types.filter((t) => allowed.has(t.slug));
+  if (filtered.length > 0) return filtered;
+  const anyMatch = types.filter((t) => allowed.has(t.slug));
+  if (anyMatch.length > 0) return anyMatch;
+  // Fall back to the v4 slugs if the org selected v5 but no v5 type exists yet
+  // (forward-compat: keeps the form usable until v5 types are seeded).
+  const v4Allowed = new Set<string>(['password-string', 'password-and-description']);
+  const v4 = types.filter((t) => v4Allowed.has(t.slug) && !t.deleted);
+  return v4.length > 0 ? v4 : types.filter((t) => v4Allowed.has(t.slug));
 }
 
 function errMessage(err: unknown, fallback: string): string {
@@ -90,10 +119,23 @@ export function ResourceFormModal({
   onSaved,
 }: ResourceFormModalProps) {
   const { encryptForSelf, ownPublicKeyArmored, isLocked, decrypt } = useKey();
+  const {
+    available: metadataKeyAvailable,
+    encryptResourceMetadata,
+  } = useMetadataKey();
   const toast = useToast();
   const isEdit = !!resource;
 
-  const typeOptions = useMemo(() => passwordResourceTypes(resourceTypes), [resourceTypes]);
+  // Org create-format policy. Loaded once per open; null until it arrives. The
+  // service always resolves to a well-formed all-v4 default when the row is
+  // absent, so a null here only means "still loading" — the v4 path is the safe
+  // default in either case.
+  const [typesSettings, setTypesSettings] = useState<MetadataTypesSettings | null>(null);
+
+  const typeOptions = useMemo(
+    () => passwordResourceTypes(resourceTypes, typesSettings),
+    [resourceTypes, typesSettings]
+  );
 
   const [form, setForm] = useState<FormState>(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -189,6 +231,30 @@ export function ResourceFormModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isEdit, resource?.id, isLocked, decrypt]);
 
+  // -------------------------------------------------------------------------
+  // Load the org create-format policy when the modal opens. Drives the format
+  // decision + the type selector. Failures are tolerated (degrade to v4 via the
+  // service's all-v4 default), so a settings outage never blocks creating a v4
+  // resource. Kept separate from the form-init effect so an arriving policy
+  // never clobbers user input.
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const settings = await getMetadataTypesSettings();
+        if (!cancelled) setTypesSettings(settings);
+      } catch {
+        // Tolerate: the v4 path is the safe default when the policy is unknown.
+        if (!cancelled) setTypesSettings(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
@@ -204,8 +270,27 @@ export function ResourceFormModal({
       return;
     }
 
+    const selectedType = resourceTypes.find((t) => t.id === form.resourceTypeId);
+    if (!selectedType) {
+      setError('The selected resource type is unavailable. Reload and try again.');
+      return;
+    }
+
+    // Decide v4 (cleartext columns) vs v5 (encrypted metadata) purely from the
+    // org policy + metadata-key availability — never a user toggle. Today's
+    // defaults always yield v4; this flips to v5 transparently once an admin
+    // enables it AND a metadata key exists.
+    const decision = decideResourceFormat({
+      typesSettings,
+      selectedResourceType: selectedType,
+      metadataKeyAvailable,
+      allowPersonalKeys: false,
+    });
+
     setSaving(true);
     try {
+      // SECRET path is IDENTICAL in both branches: same per-slug encoding,
+      // same per-recipient (own-key) GPG encryption.
       const plaintext = encodeSecret(currentSlug, {
         password: form.password,
         description: usesEncryptedDescription ? form.description : '',
@@ -213,12 +298,65 @@ export function ResourceFormModal({
       // Encrypt for the OWNER's own public key only (the creator).
       const armoredSecret = await encryptForSelf(plaintext);
 
-      if (isEdit && resource) {
+      // The user-visible name/username/uri/description. In v4 these are sent as
+      // cleartext columns; in v5 they live inside the encrypted metadata blob.
+      const name = form.name.trim();
+      const username = form.username.trim();
+      const uri = form.uri.trim();
+      // v5 keeps the full description in the metadata blob; v4's encrypted-desc
+      // types keep it in the secret and send '' for the column.
+      const cleartextDescription = usesEncryptedDescription ? '' : form.description;
+
+      if (decision.format === 'v5') {
+        // Build the v5 metadata cleartext, then encrypt it to the verified
+        // shared metadata PUBLIC key (encryptResourceMetadata verifies the
+        // active key's fingerprint first — server-substitution defence).
+        const metadataJson = buildResourceMetadataJson({
+          resource_type_id: form.resourceTypeId,
+          name,
+          username,
+          uri,
+          description: form.description,
+        });
+        const { metadata, metadata_key_id, metadata_key_type } =
+          await encryptResourceMetadata(metadataJson);
+
+        if (isEdit && resource) {
+          const req: ResourceUpdateRequest = {
+            resource_type_id: form.resourceTypeId,
+            metadata,
+            metadata_key_id,
+            metadata_key_type,
+            secrets: [{ data: armoredSecret }],
+          };
+          await updateResource(resource.id, req);
+          toast.success('Password updated');
+        } else {
+          // The create request's cleartext columns are required by the contract,
+          // but in v5 the real values live encrypted in `metadata`; the columns
+          // are blanked (mirrors the reference Passbolt v5 wire — server reads
+          // the metadata blob, not these placeholders).
+          const req: ResourceCreateRequest = {
+            name: '',
+            username: '',
+            uri: '',
+            description: '',
+            resource_type_id: form.resourceTypeId,
+            metadata,
+            metadata_key_id,
+            metadata_key_type,
+            ...(form.folderParentId ? { folder_parent_id: form.folderParentId } : {}),
+            secrets: [{ data: armoredSecret }],
+          };
+          await createResource(req);
+          toast.success('Password created');
+        }
+      } else if (isEdit && resource) {
         const req: ResourceUpdateRequest = {
-          name: form.name.trim(),
-          username: form.username.trim(),
-          uri: form.uri.trim(),
-          description: usesEncryptedDescription ? '' : form.description,
+          name,
+          username,
+          uri,
+          description: cleartextDescription,
           resource_type_id: form.resourceTypeId,
           secrets: [{ data: armoredSecret }],
         };
@@ -226,10 +364,10 @@ export function ResourceFormModal({
         toast.success('Password updated');
       } else {
         const req: ResourceCreateRequest = {
-          name: form.name.trim(),
-          username: form.username.trim(),
-          uri: form.uri.trim(),
-          description: usesEncryptedDescription ? '' : form.description,
+          name,
+          username,
+          uri,
+          description: cleartextDescription,
           resource_type_id: form.resourceTypeId,
           ...(form.folderParentId ? { folder_parent_id: form.folderParentId } : {}),
           secrets: [{ data: armoredSecret }],
