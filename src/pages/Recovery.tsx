@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { fingerprintOf } from '../gpg';
 import { useKey } from '../crypto/KeyContext';
+import { loginWithGpg } from '../auth';
 import { requestRecovery, startRecovery, completeRecovery } from '../services/setup';
 import { Stepper } from './flowHelpers';
 import type { User } from '../types';
@@ -192,6 +193,9 @@ export default function Recovery() {
       // fingerprint matches the key already on file for this account; on
       // mismatch it rejects (surfaced verbatim, e.g. "该密钥不属于此用户").
       await completeRecovery(userId, { token, armoredPublicKey });
+      // recover/complete issues NO JWT (matching PHP). Log in with the recovered
+      // key to obtain a session token, else ProtectedRoute bounces us to /login.
+      await loginWithGpg(armoredPrivateKey, pf);
       // Standard Login/Setup handoff: persist the passphrase-protected private
       // key, unlock it in memory with the just-entered passphrase, enter vault.
       setArmoredKeys(armoredPrivateKey, armoredPublicKey);

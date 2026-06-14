@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { generateKeyPair, fingerprintOf } from '../gpg';
 import { useKey } from '../crypto/KeyContext';
+import { loginWithGpg } from '../auth';
 import { startSetup, completeSetup } from '../services/setup';
 import { Stepper, KeyGen, ppScore, PP_LABEL, downloadRecoveryKit } from './flowHelpers';
 import type { User } from '../types';
@@ -184,8 +185,13 @@ export default function Setup() {
       // Upload ONLY the armored PUBLIC key; activate the account.
       await completeSetup(userId, { token, armoredPublicKey });
 
-      // Exact Login.tsx handoff: persist the passphrase-protected private key,
-      // unlock it in memory with the just-set passphrase, then enter the vault.
+      // setup/complete activates the account but issues NO JWT (matching PHP).
+      // So perform a real GpgAuth login with the just-created key to obtain a
+      // session JWT — otherwise ProtectedRoute (JWT gate) bounces us to /login.
+      await loginWithGpg(armoredPrivateKey, pf);
+
+      // Then the proven Login.tsx in-memory handoff: persist the passphrase-
+      // protected private key, unlock it in memory, and enter the vault unlocked.
       setArmoredKeys(armoredPrivateKey, armoredPublicKey);
       await unlock(pf);
       navigate('/');
