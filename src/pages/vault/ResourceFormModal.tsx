@@ -360,15 +360,11 @@ export function ResourceFormModal({
           await updateResource(resource.id, req);
           toast.success('Password updated');
         } else {
-          // The create request's cleartext columns are required by the contract,
-          // but in v5 the real values live encrypted in `metadata`; the columns
-          // are blanked (mirrors the reference Passbolt v5 wire — server reads
-          // the metadata blob, not these placeholders).
+          // v5 create: the real name/username/uri/description live encrypted in
+          // `metadata`. The v4 cleartext columns are OMITTED entirely — PHP's
+          // MetadataResourceDto rejects any non-null v4 field on a v5 payload
+          // ("V4 related fields are not supported for V5."), so sending '' fails.
           const req: ResourceCreateRequest = {
-            name: '',
-            username: '',
-            uri: '',
-            description: '',
             resource_type_id: form.resourceTypeId,
             metadata,
             metadata_key_id,

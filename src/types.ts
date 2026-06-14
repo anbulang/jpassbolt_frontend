@@ -153,10 +153,14 @@ export interface Resource {
 }
 
 export interface ResourceCreateRequest {
-  name: string;
-  username: string;
-  uri: string;
-  description: string;
+  // v4 cleartext columns: REQUIRED for v4 creates, OMITTED for v5 (the real
+  // values live encrypted in `metadata`). Optional so the v5 path can leave
+  // them out entirely — PHP rejects any non-null v4 field on a v5 payload
+  // ("V4 related fields are not supported for V5."), so sending '' is wrong.
+  name?: string;
+  username?: string;
+  uri?: string;
+  description?: string;
   resource_type_id: string;
   /** Destination folder in the creator's tree; omit / null = root. */
   folder_parent_id?: string;
