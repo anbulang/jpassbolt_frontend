@@ -88,6 +88,21 @@ function httpStatus(err: unknown): number | undefined {
     return asApiError(err).response?.status;
 }
 
+/**
+ * The TOTP setup/probe endpoints return HTTP 400 with
+ * "This authentication provider is not enabled for your organization."
+ * when org-level TOTP has not been turned on. Detect that case so we can
+ * surface friendly guidance instead of the raw backend string.
+ */
+function isTotpProviderDisabled(err: unknown): boolean {
+    const e = asApiError(err);
+    const raw = (e.response?.data?.header?.message || e.message || '').toLowerCase();
+    return raw.includes('not enabled for your organization');
+}
+
+const TOTP_ORG_DISABLED_MESSAGE =
+    '两步验证尚未在组织层启用。请管理员先在「服务器与组织」标签页开启「全组织 TOTP」，再回到此处设置。';
+
 // ---------------------------------------------------------------------------
 // otpauth:// parsing
 // ---------------------------------------------------------------------------
@@ -457,7 +472,11 @@ function SecurityTab() {
             }
         } catch (err: unknown) {
             if (httpStatus(err) === 429) setRateLimited(true);
-            setError(errMessage(err, 'Failed to load MFA status.'));
+            if (isTotpProviderDisabled(err)) {
+                setError(TOTP_ORG_DISABLED_MESSAGE);
+            } else {
+                setError(errMessage(err, '加载 MFA 状态失败。'));
+            }
             setStatus('error');
         }
     }, []);
@@ -473,13 +492,17 @@ function SecurityTab() {
         try {
             const state = await getTotpSetupState();
             if (!state.otpProvisioningUri) {
-                throw new Error('Server did not return a provisioning URI.');
+                throw new Error('服务器未返回绑定地址（provisioning URI）。');
             }
             setSetup(state);
             setCode('');
         } catch (err: unknown) {
             if (httpStatus(err) === 429) setRateLimited(true);
-            setError(errMessage(err, 'Failed to start TOTP setup.'));
+            if (isTotpProviderDisabled(err)) {
+                setError(TOTP_ORG_DISABLED_MESSAGE);
+            } else {
+                setError(errMessage(err, '启动两步验证设置失败。'));
+            }
         } finally {
             setProvisioning(false);
         }
@@ -495,7 +518,7 @@ function SecurityTab() {
         e.preventDefault();
         if (!setup?.otpProvisioningUri) return;
         if (!/^\d{6}$/.test(code)) {
-            setError('Enter the 6-digit code from your authenticator.');
+            setError('请输入身份验证器 App 生成的 6 位验证码。');
             return;
         }
         setEnabling(true);
@@ -510,16 +533,16 @@ function SecurityTab() {
             setSetup(null);
             setCode('');
             setStatus('enabled');
-            toast.success('Two-factor authentication enabled.');
+            toast.success('两步验证已启用。');
         } catch (err: unknown) {
             if (httpStatus(err) === 429) {
                 setRateLimited(true);
-                setError('Too many attempts. Please try again later.');
+                setError('尝试次数过多，请稍后再试。');
             } else {
                 setError(
                     errMessage(
                         err,
-                        'That code did not verify. Check your authenticator and try again.',
+                        '验证码校验未通过。请检查身份验证器 App 后重试。',
                     ),
                 );
             }
@@ -536,9 +559,9 @@ function SecurityTab() {
             setVerified(null);
             setStatus('disabled');
             setConfirmDisable(false);
-            toast.success('Two-factor authentication disabled.');
+            toast.success('两步验证已关闭。');
         } catch (err: unknown) {
-            const msg = errMessage(err, 'Failed to disable MFA.');
+            const msg = errMessage(err, '关闭 MFA 失败。');
             setError(msg);
             toast.error(msg);
         } finally {
