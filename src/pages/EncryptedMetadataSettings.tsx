@@ -147,7 +147,7 @@ function formatFingerprint(fp: string): string {
 function BoolBadge({ value }: { value: boolean }) {
     return (
         <Badge variant={value ? 'success' : 'muted'}>
-            {value ? <Check size={12} /> : <X size={12} />} {value ? 'Yes' : 'No'}
+            {value ? <Check size={12} /> : <X size={12} />} {value ? '是' : '否'}
         </Badge>
     );
 }
@@ -180,7 +180,7 @@ export default function EncryptedMetadataSettings() {
         return (
             <div className="container animate-fade-in">
                 <div className="glass-panel" style={{ padding: '48px 20px' }}>
-                    <FullSpinner label="Checking permissions..." />
+                    <FullSpinner label="正在校验权限……" />
                 </div>
             </div>
         );
@@ -225,7 +225,7 @@ function AdminPanel() {
                 setUserCount(null);
             }
         } catch (err: unknown) {
-            setError(errMessage(err, 'Failed to load encrypted-metadata settings.'));
+            setError(errMessage(err, '加载加密元数据设置失败。'));
         } finally {
             setLoading(false);
         }
@@ -244,21 +244,21 @@ function AdminPanel() {
     return (
         <div className="container animate-fade-in">
             <div style={{ marginBottom: '24px' }}>
-                <h1 style={{ margin: 0, fontSize: '26px' }}>Encrypted metadata</h1>
+                <h1 style={{ margin: 0, fontSize: '26px' }}>加密元数据</h1>
                 <p style={{ color: 'var(--text-secondary)', margin: '6px 0 0' }}>
-                    Organization policy and keys for encrypted (v5) resource metadata.
+                    用于加密（v5）资源元数据的组织策略与密钥。
                 </p>
             </div>
 
             {loading ? (
                 <div className="glass-panel" style={{ padding: '48px 20px' }}>
-                    <FullSpinner label="Loading encrypted-metadata settings..." />
+                    <FullSpinner label="正在加载加密元数据设置……" />
                 </div>
             ) : error ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <ErrorBanner>{error}</ErrorBanner>
                     <button type="button" className="btn btn-secondary" onClick={() => void load()}>
-                        Retry
+                        重试
                     </button>
                 </div>
             ) : (
@@ -284,29 +284,29 @@ function AdminPanel() {
 // Section 1 — Metadata types policy
 // ===========================================================================
 const TYPE_ENTITIES: { key: keyof MetadataTypesSettings; label: string }[] = [
-    { key: 'default_resource_types', label: 'Resources' },
-    { key: 'default_folder_type', label: 'Folders' },
-    { key: 'default_tag_type', label: 'Tags' },
-    { key: 'default_comment_type', label: 'Comments' },
+    { key: 'default_resource_types', label: '资源' },
+    { key: 'default_folder_type', label: '文件夹' },
+    { key: 'default_tag_type', label: '标签' },
+    { key: 'default_comment_type', label: '评论' },
 ];
 
 const V5_CREATE_FLAGS: { key: keyof MetadataTypesSettings; label: string }[] = [
-    { key: 'allow_creation_of_v5_resources', label: 'Allow creation of v5 resources' },
-    { key: 'allow_creation_of_v5_folders', label: 'Allow creation of v5 folders' },
-    { key: 'allow_creation_of_v5_tags', label: 'Allow creation of v5 tags' },
-    { key: 'allow_creation_of_v5_comments', label: 'Allow creation of v5 comments' },
+    { key: 'allow_creation_of_v5_resources', label: '允许创建 v5 资源' },
+    { key: 'allow_creation_of_v5_folders', label: '允许创建 v5 文件夹' },
+    { key: 'allow_creation_of_v5_tags', label: '允许创建 v5 标签' },
+    { key: 'allow_creation_of_v5_comments', label: '允许创建 v5 评论' },
 ];
 
 const V4_CREATE_FLAGS: { key: keyof MetadataTypesSettings; label: string }[] = [
-    { key: 'allow_creation_of_v4_resources', label: 'Allow creation of v4 resources' },
-    { key: 'allow_creation_of_v4_folders', label: 'Allow creation of v4 folders' },
-    { key: 'allow_creation_of_v4_tags', label: 'Allow creation of v4 tags' },
-    { key: 'allow_creation_of_v4_comments', label: 'Allow creation of v4 comments' },
+    { key: 'allow_creation_of_v4_resources', label: '允许创建 v4 资源' },
+    { key: 'allow_creation_of_v4_folders', label: '允许创建 v4 文件夹' },
+    { key: 'allow_creation_of_v4_tags', label: '允许创建 v4 标签' },
+    { key: 'allow_creation_of_v4_comments', label: '允许创建 v4 评论' },
 ];
 
 const MIGRATION_FLAGS: { key: keyof MetadataTypesSettings; label: string }[] = [
-    { key: 'allow_v4_v5_upgrade', label: 'Allow v4 → v5 upgrade' },
-    { key: 'allow_v5_v4_downgrade', label: 'Allow v5 → v4 downgrade' },
+    { key: 'allow_v4_v5_upgrade', label: '允许 v4 → v5 升级' },
+    { key: 'allow_v5_v4_downgrade', label: '允许 v5 → v4 降级' },
 ];
 
 /** The boolean fields that imply v5 is in use (blocked without an active key). */
@@ -362,7 +362,7 @@ function TypesPolicySection({
     const handleSave = async () => {
         if (blockedNoKey) {
             setError(
-                'Enabling v5 requires an active organization metadata key. Create a metadata key first.',
+                '启用 v5 需要一个处于激活状态的组织元数据密钥，请先创建元数据密钥。',
             );
             return;
         }
@@ -372,11 +372,11 @@ function TypesPolicySection({
             const updated = await updateMetadataTypesSettings(draft);
             onSaved(updated);
             setEditing(false);
-            toast.success('Metadata types policy updated.');
+            toast.success('元数据格式策略已更新。');
         } catch (err: unknown) {
             // The backend 400s when a v5 flag is enabled without an active key —
             // surface its message verbatim instead of failing silently.
-            const msg = errMessage(err, 'Failed to update the metadata types policy.');
+            const msg = errMessage(err, '更新元数据格式策略失败。');
             setError(msg);
             toast.error(msg);
         } finally {
@@ -388,24 +388,22 @@ function TypesPolicySection({
         <div className="glass-panel" style={{ padding: '28px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
                 <SettingsIcon size={20} color="var(--primary-color)" />
-                <h2 style={{ margin: 0, fontSize: '18px', flex: 1 }}>Metadata types policy</h2>
+                <h2 style={{ margin: 0, fontSize: '18px', flex: 1 }}>元数据格式策略</h2>
                 {!editing && (
                     <button type="button" className="btn btn-secondary" onClick={beginEdit}>
-                        <Pencil size={16} /> Edit
+                        <Pencil size={16} /> 编辑
                     </button>
                 )}
             </div>
             <p style={{ color: 'var(--text-secondary)', marginTop: 0, marginBottom: '20px' }}>
-                Controls which format new items use and whether v4/v5 creation and migration are
-                permitted across the organization.
+                控制新建项目使用的格式，以及是否允许在组织范围内创建和迁移 v4/v5。
             </p>
 
             {!hasActiveKey && (
                 <div style={{ marginBottom: '16px' }}>
                     <WarnBanner>
-                        No active organization metadata key exists yet. Enabling any v5 option
-                        requires an active metadata key — the server will reject the change until one
-                        is created.
+                        目前尚无处于激活状态的组织元数据密钥。启用任何 v5 选项都需要一个激活的元数据密钥——
+                        在创建之前，服务器将拒绝相关更改。
                     </WarnBanner>
                 </div>
             )}
@@ -418,7 +416,7 @@ function TypesPolicySection({
 
             {/* Default formats per entity */}
             <h3 style={{ fontSize: '14px', margin: '0 0 10px', color: 'var(--text-secondary)' }}>
-                Default format
+                默认格式
             </h3>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <tbody>
@@ -456,7 +454,7 @@ function TypesPolicySection({
 
             {/* Boolean policy groups */}
             <BoolFlagGroup
-                title="v5 creation"
+                title="v5 创建"
                 flags={V5_CREATE_FLAGS}
                 editing={editing}
                 saving={saving}
@@ -466,7 +464,7 @@ function TypesPolicySection({
                 disabledWhenNoKey={!hasActiveKey}
             />
             <BoolFlagGroup
-                title="v4 creation"
+                title="v4 创建"
                 flags={V4_CREATE_FLAGS}
                 editing={editing}
                 saving={saving}
@@ -475,7 +473,7 @@ function TypesPolicySection({
                 onToggle={setBool}
             />
             <BoolFlagGroup
-                title="Migration"
+                title="迁移"
                 flags={MIGRATION_FLAGS}
                 editing={editing}
                 saving={saving}
@@ -495,7 +493,7 @@ function TypesPolicySection({
                         disabled={saving || blockedNoKey}
                     >
                         {saving ? <Spinner size={16} color="#fff" /> : null}
-                        {saving ? 'Saving...' : 'Save policy'}
+                        {saving ? '正在保存……' : '保存策略'}
                     </button>
                     <button
                         type="button"
@@ -503,7 +501,7 @@ function TypesPolicySection({
                         onClick={cancelEdit}
                         disabled={saving}
                     >
-                        Cancel
+                        取消
                     </button>
                 </div>
             )}
@@ -566,7 +564,7 @@ function BoolFlagGroup({
                                                 color: 'var(--text-muted)',
                                             }}
                                         >
-                                            (requires an active metadata key)
+                                            （需要一个激活的元数据密钥）
                                         </span>
                                     )}
                                 </td>
@@ -626,9 +624,9 @@ function KeysSettingsSection({
             const updated = await updateMetadataKeysSettings(draft);
             onSaved(updated);
             setEditing(false);
-            toast.success('Metadata keys settings updated.');
+            toast.success('元数据密钥设置已更新。');
         } catch (err: unknown) {
-            const msg = errMessage(err, 'Failed to update the metadata keys settings.');
+            const msg = errMessage(err, '更新元数据密钥设置失败。');
             setError(msg);
             toast.error(msg);
         } finally {
@@ -639,13 +637,13 @@ function KeysSettingsSection({
     const rows: { key: keyof MetadataKeysSettings; label: string; help: string }[] = [
         {
             key: 'allow_usage_of_personal_keys',
-            label: 'Allow personal keys',
-            help: 'Permit metadata encrypted to a user’s own GPG key (user_key) for personal items.',
+            label: '允许使用个人密钥',
+            help: '允许个人项目的元数据使用用户自己的 GPG 密钥（user_key）加密。',
         },
         {
             key: 'zero_knowledge_key_share',
-            label: 'Zero-knowledge key share',
-            help: 'Share the metadata key without the server ever holding its private half.',
+            label: '零知识密钥共享',
+            help: '在服务器始终不持有元数据密钥私钥部分的前提下共享该密钥。',
         },
     ];
 
@@ -653,15 +651,15 @@ function KeysSettingsSection({
         <div className="glass-panel" style={{ padding: '28px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
                 <ShieldCheck size={20} color="var(--primary-color)" />
-                <h2 style={{ margin: 0, fontSize: '18px', flex: 1 }}>Metadata keys settings</h2>
+                <h2 style={{ margin: 0, fontSize: '18px', flex: 1 }}>元数据密钥设置</h2>
                 {!editing && (
                     <button type="button" className="btn btn-secondary" onClick={beginEdit}>
-                        <Pencil size={16} /> Edit
+                        <Pencil size={16} /> 编辑
                     </button>
                 )}
             </div>
             <p style={{ color: 'var(--text-secondary)', marginTop: 0, marginBottom: '20px' }}>
-                Governs how metadata keys may be used and shared across the organization.
+                管理元数据密钥在组织范围内的使用与共享方式。
             </p>
 
             {error && (
@@ -709,7 +707,7 @@ function KeysSettingsSection({
                         disabled={saving}
                     >
                         {saving ? <Spinner size={16} color="#fff" /> : null}
-                        {saving ? 'Saving...' : 'Save settings'}
+                        {saving ? '正在保存……' : '保存设置'}
                     </button>
                     <button
                         type="button"
@@ -717,7 +715,7 @@ function KeysSettingsSection({
                         onClick={cancelEdit}
                         disabled={saving}
                     >
-                        Cancel
+                        取消
                     </button>
                 </div>
             )}
@@ -729,9 +727,9 @@ function KeysSettingsSection({
 // Section 3 — Org metadata keys (read-only)
 // ===========================================================================
 function keyStatus(k: MetadataKey): { label: string; variant: 'success' | 'muted' | 'danger' } {
-    if (k.deleted !== null) return { label: 'Deleted', variant: 'danger' };
-    if (k.expired !== null) return { label: 'Expired', variant: 'muted' };
-    return { label: 'Active', variant: 'success' };
+    if (k.deleted !== null) return { label: '已删除', variant: 'danger' };
+    if (k.expired !== null) return { label: '已过期', variant: 'muted' };
+    return { label: '激活', variant: 'success' };
 }
 
 function OrgKeysSection({
@@ -745,29 +743,28 @@ function OrgKeysSection({
         <div className="glass-panel" style={{ padding: '28px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
                 <KeyRound size={20} color="var(--primary-color)" />
-                <h2 style={{ margin: 0, fontSize: '18px' }}>Organization metadata keys</h2>
+                <h2 style={{ margin: 0, fontSize: '18px' }}>组织元数据密钥</h2>
             </div>
             <p style={{ color: 'var(--text-secondary)', marginTop: 0, marginBottom: '20px' }}>
-                Shared keys used to encrypt resource metadata. Distribution shows how many users
-                hold an encrypted copy of each key’s private half. Key creation and rotation are not
-                yet available here.
+                用于加密资源元数据的共享密钥。分发情况显示有多少用户持有每个密钥私钥部分的加密副本。
+                此处暂不支持创建和轮换密钥。
             </p>
 
             {keys.length === 0 ? (
                 <EmptyState
                     icon={KeyRound}
-                    title="No metadata keys"
-                    description="No organization metadata key has been created yet. v5 encrypted metadata stays disabled until one exists."
+                    title="暂无元数据密钥"
+                    description="尚未创建任何组织元数据密钥。在创建之前，v5 加密元数据将保持禁用。"
                     panel={false}
                 />
             ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid var(--panel-border)' }}>
-                            <th style={thStyle}>Fingerprint</th>
-                            <th style={thStyle}>Status</th>
-                            <th style={thStyle}>Created</th>
-                            <th style={thStyle}>Distribution</th>
+                            <th style={thStyle}>指纹</th>
+                            <th style={thStyle}>状态</th>
+                            <th style={thStyle}>创建时间</th>
+                            <th style={thStyle}>分发情况</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -776,8 +773,8 @@ function OrgKeysSection({
                             const distributed = k.metadata_private_keys?.length ?? 0;
                             const distLabel =
                                 userCount != null
-                                    ? `${distributed} / ${userCount} users`
-                                    : `${distributed} user${distributed === 1 ? '' : 's'}`;
+                                    ? `${distributed} / ${userCount} 位用户`
+                                    : `${distributed} 位用户`;
                             return (
                                 <tr
                                     key={k.id}

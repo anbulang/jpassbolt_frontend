@@ -26,7 +26,6 @@ import {
     useMemo,
     useRef,
     useState,
-    type CSSProperties,
     type FormEvent,
     type ReactNode,
 } from 'react';
@@ -41,6 +40,8 @@ import {
     LogOut,
     KeyRound,
     AlertTriangle,
+    Eye,
+    EyeOff,
 } from 'lucide-react';
 import { logout } from '../auth';
 import { useKey } from '../crypto/KeyContext';
@@ -87,6 +88,21 @@ function httpStatus(err: unknown): number | undefined {
     return asApiError(err).response?.status;
 }
 
+/**
+ * The TOTP setup/probe endpoints return HTTP 400 with
+ * "This authentication provider is not enabled for your organization."
+ * when org-level TOTP has not been turned on. Detect that case so we can
+ * surface friendly guidance instead of the raw backend string.
+ */
+function isTotpProviderDisabled(err: unknown): boolean {
+    const e = asApiError(err);
+    const raw = (e.response?.data?.header?.message || e.message || '').toLowerCase();
+    return raw.includes('not enabled for your organization');
+}
+
+const TOTP_ORG_DISABLED_MESSAGE =
+    '两步验证尚未在组织层启用。请管理员先在「服务器与组织」标签页开启「全组织 TOTP」，再回到此处设置。';
+
 // ---------------------------------------------------------------------------
 // otpauth:// parsing
 // ---------------------------------------------------------------------------
@@ -109,23 +125,10 @@ function parseOtpauth(uri: string): {
     }
 }
 
-const errorBannerStyle: CSSProperties = {
-    background: 'rgba(248, 81, 73, 0.1)',
-    color: 'var(--danger-color)',
-    border: '1px solid var(--danger-color)',
-    borderRadius: 'var(--radius-md)',
-    padding: '12px 16px',
-    fontSize: '14px',
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '10px',
-    lineHeight: 1.5,
-};
-
 function ErrorBanner({ children }: { children: ReactNode }) {
     return (
-        <div style={errorBannerStyle}>
-            <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+        <div className="warnbox">
+            <AlertTriangle size={18} />
             <span>{children}</span>
         </div>
     );
@@ -185,15 +188,15 @@ function OtpauthQr({ data, size = 196 }: { data: string; size?: number }) {
                     alignItems: 'center',
                     justifyContent: 'center',
                     textAlign: 'center',
-                    background: 'rgba(255,255,255,0.04)',
-                    border: '1px dashed var(--panel-border)',
-                    borderRadius: 'var(--radius-md)',
-                    color: 'var(--text-muted)',
+                    background: 'var(--surface-3)',
+                    border: '1px dashed var(--border-strong)',
+                    borderRadius: 'var(--r)',
+                    color: 'var(--text-3)',
                     fontSize: '12px',
                     padding: '12px',
                 }}
             >
-                QR unavailable — paste the setup key below into your authenticator.
+                无法生成二维码 —— 请将下方密钥手动粘贴到你的身份验证器。
             </div>
         );
     }
@@ -201,50 +204,8 @@ function OtpauthQr({ data, size = 196 }: { data: string; size?: number }) {
     return (
         <canvas
             ref={canvasRef}
-            style={{ width: size, height: size, borderRadius: 'var(--radius-md)', background: '#fff' }}
-            aria-label="TOTP provisioning QR code"
+            aria-label="TOTP 绑定二维码"
         />
-    );
-}
-
-// ---------------------------------------------------------------------------
-// A copyable inline text chip.
-// ---------------------------------------------------------------------------
-function CopyChip({ value, mono = true }: { value: string; mono?: boolean }) {
-    const [copied, setCopied] = useState(false);
-    const onCopy = async () => {
-        try {
-            await navigator.clipboard.writeText(value);
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 2000);
-        } catch {
-            /* clipboard unavailable */
-        }
-    };
-    return (
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch' }}>
-            <input
-                className="form-control"
-                value={value}
-                readOnly
-                onFocus={(e) => e.currentTarget.select()}
-                style={{
-                    flex: 1,
-                    fontFamily: mono ? "'SFMono-Regular', Consolas, Menlo, monospace" : undefined,
-                    fontSize: '13px',
-                }}
-            />
-            <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ padding: '0 14px' }}
-                onClick={onCopy}
-                aria-label="Copy"
-                title="Copy"
-            >
-                {copied ? <Check size={16} color="var(--success-color)" /> : <Copy size={16} />}
-            </button>
-        </div>
     );
 }
 
@@ -254,9 +215,9 @@ function CopyChip({ value, mono = true }: { value: string; mono?: boolean }) {
 type Tab = 'profile' | 'security' | 'account';
 
 const TABS: { id: Tab; label: string; icon: typeof UserIcon }[] = [
-    { id: 'profile', label: 'Profile', icon: UserIcon },
-    { id: 'security', label: 'Security', icon: ShieldCheck },
-    { id: 'account', label: 'Account', icon: Server },
+    { id: 'profile', label: '账户与资料', icon: UserIcon },
+    { id: 'security', label: '安全 / 两步验证', icon: ShieldCheck },
+    { id: 'account', label: '服务器与组织', icon: Server },
 ];
 
 // ===========================================================================
@@ -289,42 +250,42 @@ export default function Settings() {
     const isAdmin = me?.role?.name === 'admin';
 
     return (
-        <div className="container animate-fade-in">
-            <div style={{ marginBottom: '24px' }}>
-                <h1 style={{ margin: 0, fontSize: '26px' }}>Settings</h1>
-                <p style={{ color: 'var(--text-secondary)', margin: '6px 0 0' }}>
-                    Manage your profile, two-factor authentication, and account.
-                </p>
-            </div>
-
-            {/* Tab strip */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-                {TABS.map(({ id, label, icon: Icon }) => (
-                    <button
-                        key={id}
-                        type="button"
-                        className={`btn ${tab === id ? 'btn-primary' : 'btn-secondary'}`}
-                        onClick={() => setTab(id)}
-                        style={{ padding: '8px 16px' }}
-                    >
-                        <Icon size={16} /> {label}
-                    </button>
-                ))}
-            </div>
-
-            {meLoading ? (
-                <div className="glass-panel" style={{ padding: '48px 20px' }}>
-                    <FullSpinner label="Loading your account..." />
+        <div className="page">
+            <div className="slayout">
+                {/* Left settings nav */}
+                <div className="snav">
+                    <div className="snav-label">设置</div>
+                    {TABS.map(({ id, label, icon: Icon }) => (
+                        <button
+                            key={id}
+                            type="button"
+                            className={`snav-item${tab === id ? ' on' : ''}`}
+                            onClick={() => setTab(id)}
+                        >
+                            <Icon /> {label}
+                        </button>
+                    ))}
                 </div>
-            ) : meError ? (
-                <ErrorBanner>{meError}</ErrorBanner>
-            ) : (
-                <>
-                    {tab === 'profile' && me && <ProfileTab me={me} onSaved={loadMe} />}
-                    {tab === 'security' && <SecurityTab />}
-                    {tab === 'account' && me && <AccountTab me={me} isAdmin={isAdmin} />}
-                </>
-            )}
+
+                {/* Right content */}
+                <div className="scontent">
+                    <div className="scontent-inner">
+                        {meLoading ? (
+                            <FullSpinner label="正在加载你的账户..." />
+                        ) : meError ? (
+                            <ErrorBanner>{meError}</ErrorBanner>
+                        ) : (
+                            <>
+                                {tab === 'profile' && me && <ProfileTab me={me} onSaved={loadMe} />}
+                                {tab === 'security' && <SecurityTab />}
+                                {tab === 'account' && me && (
+                                    <AccountTab me={me} isAdmin={isAdmin} />
+                                )}
+                            </>
+                        )}
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }
@@ -347,7 +308,7 @@ function ProfileTab({ me, onSaved }: { me: User; onSaved: () => void | Promise<v
     const handleSave = async (e: FormEvent) => {
         e.preventDefault();
         if (!firstName.trim() || !lastName.trim()) {
-            setError('First and last name are required.');
+            setError('姓与名均为必填项。');
             return;
         }
         setSaving(true);
@@ -357,10 +318,10 @@ function ProfileTab({ me, onSaved }: { me: User; onSaved: () => void | Promise<v
                 first_name: firstName.trim(),
                 last_name: lastName.trim(),
             });
-            toast.success('Profile updated.');
+            toast.success('资料已更新。');
             await onSaved();
         } catch (err: unknown) {
-            const msg = errMessage(err, 'Failed to update your profile.');
+            const msg = errMessage(err, '更新资料失败。');
             setError(msg);
             toast.error(msg);
         } finally {
@@ -369,99 +330,100 @@ function ProfileTab({ me, onSaved }: { me: User; onSaved: () => void | Promise<v
     };
 
     return (
-        <div className="glass-panel" style={{ padding: '28px' }}>
+        <form onSubmit={handleSave} style={{ display: 'contents' }}>
+            <h2 className="stitle">账户与资料</h2>
+            <div className="ssub">管理你的身份信息、显示名称与登录凭据。</div>
+
             {error && (
-                <div style={{ marginBottom: '20px' }}>
+                <div style={{ marginBottom: '18px' }}>
                     <ErrorBanner>{error}</ErrorBanner>
                 </div>
             )}
 
-            <div style={{ display: 'flex', gap: '28px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                {/* Avatar column */}
-                <div
-                    style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: '12px',
-                    }}
-                >
+            {/* Identity card */}
+            <div className="scard">
+                <div className="srow">
                     <Avatar
                         src={avatarSrc}
                         firstName={me.profile?.first_name}
                         lastName={me.profile?.last_name}
                         name={me.username}
-                        size={96}
+                        size={56}
                     />
-                    {/* Avatar upload is intentionally not offered: the backend exposes no
-                        avatar write endpoint (UserDto.ProfilePayload.avatar is accepted but
-                        ignored), so a "Change avatar" control could never succeed. */}
-                    <span
-                        style={{
-                            fontSize: '12px',
-                            color: 'var(--text-muted)',
-                            textAlign: 'center',
-                            maxWidth: '120px',
-                        }}
-                    >
-                        Avatar changes are not supported yet.
-                    </span>
-                </div>
-
-                {/* Form column */}
-                <form onSubmit={handleSave} style={{ flex: 1, minWidth: '280px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                            <label className="form-label" htmlFor="settings-first-name">
-                                First name
-                            </label>
-                            <input
-                                id="settings-first-name"
-                                className="form-control"
-                                value={firstName}
-                                onChange={(e) => setFirstName(e.target.value)}
-                                disabled={saving}
-                                autoComplete="given-name"
-                            />
+                    <div className="sk">
+                        <div className="label">
+                            {[me.profile?.first_name, me.profile?.last_name]
+                                .filter(Boolean)
+                                .join(' ') || me.username}
                         </div>
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                            <label className="form-label" htmlFor="settings-last-name">
-                                Last name
-                            </label>
-                            <input
-                                id="settings-last-name"
-                                className="form-control"
-                                value={lastName}
-                                onChange={(e) => setLastName(e.target.value)}
-                                disabled={saving}
-                                autoComplete="family-name"
-                            />
-                        </div>
+                        {/* Avatar upload is intentionally not offered: the backend exposes no
+                            avatar write endpoint (UserDto.ProfilePayload.avatar is accepted but
+                            ignored), so a "Change avatar" control could never succeed. */}
+                        <div className="hint">头像更换暂未支持。</div>
                     </div>
-
-                    <div className="form-group" style={{ marginTop: '16px', marginBottom: 0 }}>
-                        <label className="form-label">Username</label>
-                        <input className="form-control" value={me.username} readOnly disabled />
-                    </div>
-
-                    <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span className="form-label" style={{ margin: 0 }}>
-                            Role
-                        </span>
+                    <div className="sv">
                         <Badge variant={me.role?.name === 'admin' ? 'primary' : 'default'}>
                             {me.role?.name ?? 'user'}
                         </Badge>
                     </div>
+                </div>
 
-                    <div style={{ marginTop: '24px', display: 'flex', gap: '12px' }}>
-                        <button type="submit" className="btn btn-primary" disabled={saving || !dirty}>
-                            {saving ? <Spinner size={16} color="#fff" /> : null}
-                            {saving ? 'Saving...' : 'Save changes'}
-                        </button>
+                <div className="srow">
+                    <div className="sk">
+                        <div className="label">名字</div>
                     </div>
-                </form>
+                    <div className="sv">
+                        <input
+                            id="settings-first-name"
+                            className="sinput sans"
+                            value={firstName}
+                            onChange={(e) => setFirstName(e.target.value)}
+                            disabled={saving}
+                            autoComplete="given-name"
+                        />
+                    </div>
+                </div>
+
+                <div className="srow">
+                    <div className="sk">
+                        <div className="label">姓氏</div>
+                    </div>
+                    <div className="sv">
+                        <input
+                            id="settings-last-name"
+                            className="sinput sans"
+                            value={lastName}
+                            onChange={(e) => setLastName(e.target.value)}
+                            disabled={saving}
+                            autoComplete="family-name"
+                        />
+                    </div>
+                </div>
+
+                <div className="srow">
+                    <div className="sk">
+                        <div className="label">用户名</div>
+                        <div className="hint">用于登录，不可更改</div>
+                    </div>
+                    <div className="sv">
+                        <input
+                            className="sinput"
+                            value={me.username}
+                            readOnly
+                            disabled
+                            style={{ color: 'var(--text-3)' }}
+                        />
+                    </div>
+                </div>
             </div>
-        </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+                <button type="submit" className="btn primary" disabled={saving || !dirty}>
+                    {saving ? <Spinner size={16} color="#fff" /> : null}
+                    {saving ? '保存中...' : '保存更改'}
+                </button>
+            </div>
+        </form>
     );
 }
 
@@ -510,7 +472,11 @@ function SecurityTab() {
             }
         } catch (err: unknown) {
             if (httpStatus(err) === 429) setRateLimited(true);
-            setError(errMessage(err, 'Failed to load MFA status.'));
+            if (isTotpProviderDisabled(err)) {
+                setError(TOTP_ORG_DISABLED_MESSAGE);
+            } else {
+                setError(errMessage(err, '加载 MFA 状态失败。'));
+            }
             setStatus('error');
         }
     }, []);
@@ -526,13 +492,17 @@ function SecurityTab() {
         try {
             const state = await getTotpSetupState();
             if (!state.otpProvisioningUri) {
-                throw new Error('Server did not return a provisioning URI.');
+                throw new Error('服务器未返回绑定地址（provisioning URI）。');
             }
             setSetup(state);
             setCode('');
         } catch (err: unknown) {
             if (httpStatus(err) === 429) setRateLimited(true);
-            setError(errMessage(err, 'Failed to start TOTP setup.'));
+            if (isTotpProviderDisabled(err)) {
+                setError(TOTP_ORG_DISABLED_MESSAGE);
+            } else {
+                setError(errMessage(err, '启动两步验证设置失败。'));
+            }
         } finally {
             setProvisioning(false);
         }
@@ -548,7 +518,7 @@ function SecurityTab() {
         e.preventDefault();
         if (!setup?.otpProvisioningUri) return;
         if (!/^\d{6}$/.test(code)) {
-            setError('Enter the 6-digit code from your authenticator.');
+            setError('请输入身份验证器 App 生成的 6 位验证码。');
             return;
         }
         setEnabling(true);
@@ -563,16 +533,16 @@ function SecurityTab() {
             setSetup(null);
             setCode('');
             setStatus('enabled');
-            toast.success('Two-factor authentication enabled.');
+            toast.success('两步验证已启用。');
         } catch (err: unknown) {
             if (httpStatus(err) === 429) {
                 setRateLimited(true);
-                setError('Too many attempts. Please try again later.');
+                setError('尝试次数过多，请稍后再试。');
             } else {
                 setError(
                     errMessage(
                         err,
-                        'That code did not verify. Check your authenticator and try again.',
+                        '验证码校验未通过。请检查身份验证器 App 后重试。',
                     ),
                 );
             }
@@ -589,9 +559,9 @@ function SecurityTab() {
             setVerified(null);
             setStatus('disabled');
             setConfirmDisable(false);
-            toast.success('Two-factor authentication disabled.');
+            toast.success('两步验证已关闭。');
         } catch (err: unknown) {
-            const msg = errMessage(err, 'Failed to disable MFA.');
+            const msg = errMessage(err, '关闭 MFA 失败。');
             setError(msg);
             toast.error(msg);
         } finally {
@@ -605,21 +575,15 @@ function SecurityTab() {
     );
 
     return (
-        <div className="glass-panel" style={{ padding: '28px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                <ShieldCheck size={22} color="var(--primary-color)" />
-                <h2 style={{ margin: 0, fontSize: '18px' }}>Two-factor authentication (TOTP)</h2>
-                {status === 'enabled' && <Badge variant="success">Enabled</Badge>}
-                {status === 'disabled' && <Badge variant="muted">Not configured</Badge>}
+        <span style={{ display: 'contents' }}>
+            <h2 className="stitle">安全 / 两步验证</h2>
+            <div className="ssub">
+                为登录链路增加一层验证。MFA 校验在服务器完成，不影响端到端加密。
             </div>
-            <p style={{ color: 'var(--text-secondary)', marginTop: 0, marginBottom: '20px' }}>
-                Add a one-time passcode from an authenticator app (Google Authenticator, Authy,
-                1Password, etc.) as a second factor at login.
-            </p>
 
             {rateLimited && (
                 <div style={{ marginBottom: '16px' }}>
-                    <ErrorBanner>Too many attempts, please try again later.</ErrorBanner>
+                    <ErrorBanner>尝试次数过多，请稍后再试。</ErrorBanner>
                 </div>
             )}
             {error && !rateLimited && (
@@ -628,158 +592,206 @@ function SecurityTab() {
                 </div>
             )}
 
-            {status === 'loading' && <FullSpinner label="Checking MFA status..." />}
-
-            {status === 'error' && (
-                <button type="button" className="btn btn-secondary" onClick={() => void probe()}>
-                    Retry
-                </button>
-            )}
-
-            {/* ENABLED state */}
-            {status === 'enabled' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            color: 'var(--text-secondary)',
-                            fontSize: '14px',
-                        }}
-                    >
-                        <Check size={18} color="var(--success-color)" />
-                        <span>
-                            Enabled
-                            {verified ? <> since {formatDate(verified)}</> : null}.
+            <div className="scard">
+                <div className="scard-h">
+                    <ShieldCheck
+                        style={{ color: status === 'enabled' ? 'var(--green)' : 'var(--text-2)' }}
+                    />
+                    <h3>身份验证器 App (TOTP)</h3>
+                    {status === 'enabled' && (
+                        <span className="chip green" style={{ marginLeft: 'auto' }}>
+                            <Check /> 已启用
                         </span>
-                    </div>
-                    <div>
-                        <button
-                            type="button"
-                            className="btn btn-secondary"
-                            style={{ color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }}
-                            onClick={() => setConfirmDisable(true)}
-                        >
-                            <ShieldOff size={16} /> Disable two-factor
-                        </button>
-                    </div>
+                    )}
+                    {status === 'disabled' && (
+                        <span className="chip neutral" style={{ marginLeft: 'auto' }}>
+                            未配置
+                        </span>
+                    )}
                 </div>
-            )}
 
-            {/* DISABLED state — CTA or active setup flow */}
-            {status === 'disabled' && !setup && (
-                <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => void beginSetup()}
-                    disabled={provisioning}
-                >
-                    {provisioning ? <Spinner size={16} color="#fff" /> : <ShieldCheck size={16} />}
-                    {provisioning ? 'Preparing...' : 'Set up two-factor'}
-                </button>
-            )}
-
-            {status === 'disabled' && setup?.otpProvisioningUri && (
-                <div style={{ display: 'flex', gap: '28px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                    <div
-                        style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            gap: '8px',
-                        }}
-                    >
-                        <OtpauthQr data={setup.otpProvisioningUri} />
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                            Scan with your authenticator
-                        </span>
+                <div style={{ padding: '15px 18px' }}>
+                    <div className="hint" style={{ marginBottom: '14px', lineHeight: 1.5 }}>
+                        登录时使用身份验证器 App（Google Authenticator、Authy、1Password 等）生成的一次性验证码作为第二重身份验证。
                     </div>
 
-                    <div style={{ flex: 1, minWidth: '300px' }}>
-                        <p
-                            style={{
-                                marginTop: 0,
-                                color: 'var(--text-secondary)',
-                                fontSize: '14px',
-                                lineHeight: 1.6,
-                            }}
-                        >
-                            Can't scan? Open your authenticator app and add an account manually by
-                            pasting either the setup key or the full <code>otpauth://</code> URI below.
-                        </p>
+                    {status === 'loading' && <FullSpinner label="正在检查 MFA 状态..." />}
 
-                        {parsed?.secret && (
-                            <div className="form-group">
-                                <label className="form-label">Setup key (manual entry)</label>
-                                <CopyChip value={parsed.secret} />
+                    {status === 'error' && (
+                        <button type="button" className="btn" onClick={() => void probe()}>
+                            重试
+                        </button>
+                    )}
+
+                    {/* ENABLED state */}
+                    {status === 'enabled' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px',
+                                    color: 'var(--text-2)',
+                                    fontSize: '13.5px',
+                                }}
+                            >
+                                <Check size={18} color="var(--green)" />
+                                <span>
+                                    已启用
+                                    {verified ? <>，绑定于 {formatDate(verified)}</> : null}。
+                                </span>
                             </div>
-                        )}
-
-                        <div className="form-group">
-                            <label className="form-label">otpauth:// URI</label>
-                            <CopyChip value={setup.otpProvisioningUri} />
-                        </div>
-
-                        <form onSubmit={handleEnable} style={{ marginTop: '8px' }}>
-                            <div className="form-group">
-                                <label className="form-label" htmlFor="totp-code">
-                                    Enter the 6-digit code to confirm
-                                </label>
-                                <input
-                                    id="totp-code"
-                                    className="form-control"
-                                    inputMode="numeric"
-                                    autoComplete="one-time-code"
-                                    maxLength={6}
-                                    placeholder="000000"
-                                    value={code}
-                                    onChange={(e) =>
-                                        setCode(e.target.value.replace(/\D/g, '').slice(0, 6))
-                                    }
-                                    disabled={enabling}
-                                    style={{
-                                        fontFamily: "'SFMono-Regular', Consolas, Menlo, monospace",
-                                        letterSpacing: '0.3em',
-                                        maxWidth: '180px',
-                                    }}
-                                    autoFocus
-                                />
-                            </div>
-                            <div style={{ display: 'flex', gap: '12px' }}>
-                                <button
-                                    type="submit"
-                                    className="btn btn-primary"
-                                    disabled={enabling || code.length !== 6}
-                                >
-                                    {enabling ? <Spinner size={16} color="#fff" /> : null}
-                                    {enabling ? 'Verifying...' : 'Verify & enable'}
-                                </button>
+                            <div>
                                 <button
                                     type="button"
-                                    className="btn btn-secondary"
-                                    onClick={cancelSetup}
-                                    disabled={enabling}
+                                    className="btn danger"
+                                    onClick={() => setConfirmDisable(true)}
                                 >
-                                    Cancel
+                                    <ShieldOff size={16} /> 关闭两步验证
                                 </button>
                             </div>
-                        </form>
-                    </div>
+                        </div>
+                    )}
+
+                    {/* DISABLED state — CTA or active setup flow */}
+                    {status === 'disabled' && !setup && (
+                        <button
+                            type="button"
+                            className="btn primary"
+                            onClick={() => void beginSetup()}
+                            disabled={provisioning}
+                        >
+                            {provisioning ? (
+                                <Spinner size={16} color="#fff" />
+                            ) : (
+                                <ShieldCheck size={16} />
+                            )}
+                            {provisioning ? '准备中...' : '设置两步验证'}
+                        </button>
+                    )}
                 </div>
-            )}
+
+                {status === 'disabled' && setup?.otpProvisioningUri && (
+                    <div className="qr-setup">
+                        <div className="qr">
+                            <OtpauthQr data={setup.otpProvisioningUri} />
+                        </div>
+                        <div className="qr-info">
+                            <ol>
+                                <li>
+                                    用 Google Authenticator、1Password 或 Authy 扫描二维码。
+                                </li>
+                                {parsed?.secret && (
+                                    <li>
+                                        或手动输入密钥：
+                                        <br />
+                                        <span className="qr-secret">
+                                            {parsed.secret}
+                                            <CopyButton value={parsed.secret} />
+                                        </span>
+                                    </li>
+                                )}
+                                <li>
+                                    或粘贴完整的 <code>otpauth://</code> URI：
+                                    <br />
+                                    <span className="qr-secret" style={{ maxWidth: '100%' }}>
+                                        <span
+                                            style={{
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                                maxWidth: 200,
+                                            }}
+                                        >
+                                            {setup.otpProvisioningUri}
+                                        </span>
+                                        <CopyButton value={setup.otpProvisioningUri} />
+                                    </span>
+                                </li>
+                                <li>
+                                    输入 6 位验证码完成绑定。
+                                    <form onSubmit={handleEnable} style={{ marginTop: '10px' }}>
+                                        <input
+                                            id="totp-code"
+                                            className="sinput"
+                                            inputMode="numeric"
+                                            autoComplete="one-time-code"
+                                            maxLength={6}
+                                            placeholder="000000"
+                                            value={code}
+                                            onChange={(e) =>
+                                                setCode(
+                                                    e.target.value.replace(/\D/g, '').slice(0, 6),
+                                                )
+                                            }
+                                            disabled={enabling}
+                                            style={{
+                                                letterSpacing: '0.3em',
+                                                minWidth: 0,
+                                                width: '160px',
+                                            }}
+                                            autoFocus
+                                        />
+                                        <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                                            <button
+                                                type="submit"
+                                                className="btn primary sm"
+                                                disabled={enabling || code.length !== 6}
+                                            >
+                                                {enabling ? (
+                                                    <Spinner size={16} color="#fff" />
+                                                ) : null}
+                                                {enabling ? '验证中...' : '验证并启用'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="btn sm"
+                                                onClick={cancelSetup}
+                                                disabled={enabling}
+                                            >
+                                                取消
+                                            </button>
+                                        </div>
+                                    </form>
+                                </li>
+                            </ol>
+                        </div>
+                    </div>
+                )}
+            </div>
 
             <ConfirmDialog
                 open={confirmDisable}
-                title="Disable two-factor authentication?"
-                message="Your account will no longer require a one-time passcode at login. You can re-enable it at any time."
-                confirmLabel="Disable"
+                title="关闭两步验证？"
+                message="关闭后登录将不再需要一次性验证码。你可以随时重新启用。"
+                confirmLabel="关闭"
                 danger
                 loading={disabling}
                 onConfirm={() => void handleDisable()}
                 onCancel={() => setConfirmDisable(false)}
             />
-        </div>
+        </span>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Inline copy button matching the .qr-secret design (clipboard verbatim).
+// ---------------------------------------------------------------------------
+function CopyButton({ value }: { value: string }) {
+    const [copied, setCopied] = useState(false);
+    const onCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(value);
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 2000);
+        } catch {
+            /* clipboard unavailable */
+        }
+    };
+    return (
+        <button type="button" onClick={onCopy} aria-label="复制" title="复制">
+            {copied ? <Check size={14} color="var(--green)" /> : <Copy size={14} />}
+        </button>
     );
 }
 
@@ -788,86 +800,133 @@ function SecurityTab() {
 // ===========================================================================
 function AccountTab({ me, isAdmin }: { me: User; isAdmin: boolean }) {
     const { ownFingerprint, ownPublicKeyArmored } = useKey();
+    const [showFp, setShowFp] = useState(false);
+    const [fpCopied, setFpCopied] = useState(false);
 
     // Prefer the in-memory unlocked-key fingerprint; fall back to the server gpgkey.
     const fingerprint = ownFingerprint ?? me.gpgkey?.fingerprint ?? null;
+    const fingerprintPretty = fingerprint ? formatFingerprint(fingerprint) : null;
+    const fingerprintMasked = fingerprintPretty
+        ? fingerprintPretty.replace(/[0-9A-F]/g, '•')
+        : null;
+
+    const copyFingerprint = async () => {
+        if (!fingerprintPretty) return;
+        try {
+            await navigator.clipboard.writeText(fingerprintPretty);
+            setFpCopied(true);
+            window.setTimeout(() => setFpCopied(false), 2000);
+        } catch {
+            /* clipboard unavailable */
+        }
+    };
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* GPG key card */}
-            <div className="glass-panel" style={{ padding: '28px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
-                    <KeyRound size={20} color="var(--primary-color)" />
-                    <h2 style={{ margin: 0, fontSize: '18px' }}>Your encryption key</h2>
-                </div>
-                <p style={{ color: 'var(--text-secondary)', marginTop: 0, marginBottom: '16px' }}>
-                    This OpenPGP key decrypts and encrypts your secrets entirely in your browser. The
-                    server never sees your private key or passphrase.
-                </p>
+        <span style={{ display: 'contents' }}>
+            <h2 className="stitle">服务器与组织</h2>
+            <div className="ssub">你的加密密钥指纹、服务器信息与登录凭据。</div>
 
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label
-                        className="form-label"
-                        style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                    >
-                        <Fingerprint size={14} /> Fingerprint
-                    </label>
-                    {fingerprint ? (
-                        <CopyChip value={formatFingerprint(fingerprint)} />
+            {/* GPG key card */}
+            <div className="scard">
+                <div className="scard-h">
+                    <Fingerprint />
+                    <h3>OpenPGP 密钥指纹</h3>
+                    <Badge variant={ownPublicKeyArmored ? 'success' : 'muted'}>
+                        {ownPublicKeyArmored ? '已解锁' : '已锁定'}
+                    </Badge>
+                </div>
+                <div className="srow" style={{ display: 'block' }}>
+                    <div className="hint" style={{ marginBottom: 10, lineHeight: 1.5 }}>
+                        此 OpenPGP 密钥在你的浏览器内完成全部加解密。可向他人公开指纹以核验身份；私钥与 passphrase 永不离开本设备、服务器永不可见。
+                    </div>
+                    {fingerprintPretty ? (
+                        <div className="fpbox">
+                            <KeyRound style={{ width: 16, height: 16, color: 'var(--text-3)' }} />
+                            <span className="fpv">
+                                {showFp ? fingerprintPretty : fingerprintMasked}
+                            </span>
+                            <button
+                                type="button"
+                                className="copybtn"
+                                onClick={() => setShowFp((s) => !s)}
+                                aria-label={showFp ? '隐藏' : '显示'}
+                                title={showFp ? '隐藏' : '显示'}
+                            >
+                                {showFp ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                            <button
+                                type="button"
+                                className={`copybtn${fpCopied ? ' ok' : ''}`}
+                                onClick={() => void copyFingerprint()}
+                                aria-label="复制指纹"
+                                title="复制指纹"
+                            >
+                                {fpCopied ? <Check size={16} /> : <Copy size={16} />}
+                            </button>
+                        </div>
                     ) : (
-                        <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
-                            Your key is locked — unlock your vault to view the fingerprint.
+                        <div style={{ color: 'var(--text-3)', fontSize: '13.5px' }}>
+                            密钥已锁定 —— 请先解锁保险库以查看指纹。
                         </div>
                     )}
                 </div>
 
                 {me.gpgkey?.key_id && (
-                    <div style={{ marginTop: '14px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                        <div>
-                            <span className="form-label" style={{ display: 'block' }}>
-                                Key ID
-                            </span>
-                            <code style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                    <>
+                        <div className="srow">
+                            <div className="sk">
+                                <div className="label">Key ID</div>
+                            </div>
+                            <div
+                                className="sv"
+                                style={{
+                                    fontFamily: 'var(--mono)',
+                                    fontSize: 13,
+                                    color: 'var(--text-2)',
+                                }}
+                            >
                                 {me.gpgkey.key_id}
-                            </code>
+                            </div>
                         </div>
                         {me.gpgkey.bits != null && (
-                            <div>
-                                <span className="form-label" style={{ display: 'block' }}>
-                                    Length
-                                </span>
-                                <code style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-                                    {me.gpgkey.bits} bits
-                                </code>
+                            <div className="srow">
+                                <div className="sk">
+                                    <div className="label">密钥长度</div>
+                                </div>
+                                <div
+                                    className="sv"
+                                    style={{
+                                        fontFamily: 'var(--mono)',
+                                        fontSize: 13,
+                                        color: 'var(--text-2)',
+                                    }}
+                                >
+                                    {me.gpgkey.bits} 位
+                                </div>
                             </div>
                         )}
-                        <div>
-                            <span className="form-label" style={{ display: 'block' }}>
-                                In-memory status
-                            </span>
-                            <Badge variant={ownPublicKeyArmored ? 'success' : 'muted'}>
-                                {ownPublicKeyArmored ? 'Unlocked' : 'Locked'}
-                            </Badge>
-                        </div>
-                    </div>
+                    </>
                 )}
-
-                <div
-                    style={{
-                        marginTop: '24px',
-                        borderTop: '1px solid var(--panel-border)',
-                        paddingTop: '20px',
-                    }}
-                >
-                    <button type="button" className="btn btn-secondary" onClick={logout}>
-                        <LogOut size={16} /> Log out
-                    </button>
-                </div>
             </div>
 
             {/* Server settings card */}
             <ServerSettingsCard isAdmin={isAdmin} />
-        </div>
+
+            {/* Session / logout card */}
+            <div className="scard">
+                <div className="srow">
+                    <div className="sk">
+                        <div className="label">退出登录</div>
+                        <div className="hint">清除本地会话并返回登录页</div>
+                    </div>
+                    <div className="sv">
+                        <button type="button" className="btn danger" onClick={logout}>
+                            <LogOut size={16} /> 退出登录
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </span>
     );
 }
 
@@ -941,108 +1000,104 @@ function ServerSettingsCard({ isAdmin }: { isAdmin: boolean }) {
     };
 
     return (
-        <div className="glass-panel" style={{ padding: '28px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
-                <Server size={20} color="var(--primary-color)" />
-                <h2 style={{ margin: 0, fontSize: '18px' }}>Server</h2>
+        <div className="scard">
+            <div className="scard-h">
+                <Server />
+                <h3>服务器信息</h3>
             </div>
-            <p style={{ color: 'var(--text-secondary)', marginTop: 0, marginBottom: '16px' }}>
-                Read-only information reported by the JPassbolt API.
-            </p>
 
-            {loading ? (
-                <FullSpinner label="Loading server settings..." />
-            ) : error ? (
-                <ErrorBanner>{error}</ErrorBanner>
-            ) : rows.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
-                    No server settings were returned.
+            <div style={{ padding: '15px 18px' }}>
+                <div className="hint" style={{ marginBottom: rows.length ? 14 : 0 }}>
+                    由 JPassbolt API 返回的只读信息。
                 </div>
-            ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                    <tbody>
-                        {rows.map(({ key, value }) => (
-                            <tr key={key} style={{ borderBottom: '1px solid var(--panel-border)' }}>
-                                <td
-                                    style={{
-                                        padding: '8px 12px 8px 0',
-                                        color: 'var(--text-secondary)',
-                                        whiteSpace: 'nowrap',
-                                        verticalAlign: 'top',
-                                        fontFamily: "'SFMono-Regular', Consolas, Menlo, monospace",
-                                    }}
-                                >
-                                    {key}
-                                </td>
-                                <td
-                                    style={{
-                                        padding: '8px 0',
-                                        color: 'var(--text-primary)',
-                                        wordBreak: 'break-word',
-                                        fontFamily: "'SFMono-Regular', Consolas, Menlo, monospace",
-                                    }}
-                                >
-                                    {value}
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            )}
+
+                {loading ? (
+                    <FullSpinner label="正在加载服务器信息..." />
+                ) : error ? (
+                    <ErrorBanner>{error}</ErrorBanner>
+                ) : rows.length === 0 ? (
+                    <div style={{ color: 'var(--text-3)', fontSize: '13.5px' }}>
+                        服务器未返回任何配置信息。
+                    </div>
+                ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                        <tbody>
+                            {rows.map(({ key, value }) => (
+                                <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
+                                    <td
+                                        style={{
+                                            padding: '8px 12px 8px 0',
+                                            color: 'var(--text-2)',
+                                            whiteSpace: 'nowrap',
+                                            verticalAlign: 'top',
+                                            fontFamily: 'var(--mono)',
+                                        }}
+                                    >
+                                        {key}
+                                    </td>
+                                    <td
+                                        style={{
+                                            padding: '8px 0',
+                                            color: 'var(--text)',
+                                            wordBreak: 'break-word',
+                                            fontFamily: 'var(--mono)',
+                                        }}
+                                    >
+                                        {value}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
 
             {/* Org MFA control (admin only) */}
             {isAdmin && (
-                <div
-                    style={{
-                        marginTop: '24px',
-                        borderTop: '1px solid var(--panel-border)',
-                        paddingTop: '20px',
-                    }}
-                >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                        <ShieldCheck size={18} color="var(--primary-color)" />
-                        <h3 style={{ margin: 0, fontSize: '15px' }}>Organization two-factor (admin)</h3>
+                <>
+                    <div className="scard-h" style={{ borderTop: '1px solid var(--border)' }}>
+                        <ShieldCheck />
+                        <h3>组织两步验证（管理员）</h3>
                         {orgMfa && (
-                            <Badge variant={totpOrgEnabled ? 'success' : 'muted'}>
-                                {totpOrgEnabled ? 'TOTP enabled' : 'TOTP disabled'}
-                            </Badge>
+                            <span
+                                className={`chip ${totpOrgEnabled ? 'green' : 'neutral'}`}
+                                style={{ marginLeft: 'auto' }}
+                            >
+                                {totpOrgEnabled ? 'TOTP 已开启' : 'TOTP 已关闭'}
+                            </span>
                         )}
                     </div>
                     {orgMfaError ? (
-                        <ErrorBanner>{orgMfaError}</ErrorBanner>
+                        <div style={{ padding: '15px 18px' }}>
+                            <ErrorBanner>{orgMfaError}</ErrorBanner>
+                        </div>
                     ) : orgMfa ? (
-                        <>
-                            <p
-                                style={{
-                                    color: 'var(--text-secondary)',
-                                    margin: '0 0 12px',
-                                    fontSize: '14px',
-                                    lineHeight: 1.6,
-                                }}
-                            >
-                                {totpOrgEnabled
-                                    ? 'TOTP is available to all users in this organization.'
-                                    : 'TOTP is currently disabled organization-wide.'}
-                            </p>
-                            <button
-                                type="button"
-                                className={`btn ${totpOrgEnabled ? 'btn-secondary' : 'btn-primary'}`}
-                                onClick={() => void toggleOrgTotp()}
-                                disabled={orgMfaBusy}
-                                style={
-                                    totpOrgEnabled
-                                        ? { color: 'var(--danger-color)', borderColor: 'var(--danger-color)' }
-                                        : undefined
-                                }
-                            >
-                                {orgMfaBusy ? <Spinner size={16} /> : null}
-                                {totpOrgEnabled ? 'Disable TOTP org-wide' : 'Enable TOTP org-wide'}
-                            </button>
-                        </>
+                        <div className="srow">
+                            <div className="sk">
+                                <div className="label">全组织 TOTP</div>
+                                <div className="hint">
+                                    {totpOrgEnabled
+                                        ? '本组织内所有用户均可启用 TOTP。'
+                                        : '当前已在全组织范围内关闭 TOTP。'}
+                                </div>
+                            </div>
+                            <div className="sv">
+                                <button
+                                    type="button"
+                                    className={`switch${totpOrgEnabled ? ' on' : ''}`}
+                                    onClick={() => void toggleOrgTotp()}
+                                    disabled={orgMfaBusy}
+                                    aria-pressed={totpOrgEnabled}
+                                    aria-label="切换全组织 TOTP"
+                                />
+                            </div>
+                        </div>
                     ) : (
-                        <FullSpinner label="Loading organization MFA..." />
+                        <div style={{ padding: '15px 18px' }}>
+                            <FullSpinner label="正在加载组织 MFA..." />
+                        </div>
                     )}
-                </div>
+                </>
             )}
         </div>
     );

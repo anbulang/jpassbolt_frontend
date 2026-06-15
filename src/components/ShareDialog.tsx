@@ -41,10 +41,10 @@ import {
     AlertTriangle,
     Lock as LockIcon,
     Plus,
+    RefreshCw,
     Search,
-    Trash2,
     Users as UsersIcon,
-    UserRound,
+    X as XIcon,
 } from 'lucide-react';
 
 import { Modal } from './Modal';
@@ -137,9 +137,9 @@ interface DraftRow {
 const DEBOUNCE_MS = 300;
 
 const PERMISSION_OPTIONS: { value: PermissionType; label: string }[] = [
-    { value: PERMISSION.READ, label: 'Can read' },
-    { value: PERMISSION.UPDATE, label: 'Can update' },
-    { value: PERMISSION.OWNER, label: 'Owner' },
+    { value: PERMISSION.READ, label: '只读' },
+    { value: PERMISSION.UPDATE, label: '可编辑' },
+    { value: PERMISSION.OWNER, label: '拥有者' },
 ];
 
 function errMessage(err: unknown, fallback: string): string {
@@ -164,7 +164,7 @@ function aroDisplay(aro: Aro): { label: string; sublabel?: string } {
     const count = group.user_count;
     return {
         label: group.name,
-        sublabel: typeof count === 'number' ? `${count} member${count === 1 ? '' : 's'}` : 'Group',
+        sublabel: typeof count === 'number' ? `${count} 名成员` : '群组',
     };
 }
 
@@ -187,7 +187,7 @@ function seedRowFromPermission(p: Permission | PermissionWithAro): DraftRow {
         // Default to the UUID as a placeholder; replaced below if we have an
         // embedded object, or later by the resolver effect (never show raw UUIDs).
         label: p.aro_foreign_key,
-        sublabel: p.aro === 'Group' ? 'Group' : 'User',
+        sublabel: p.aro === 'Group' ? '群组' : '用户',
     };
 
     if (p.aro === 'User' && embedded.user) {
@@ -203,7 +203,7 @@ function seedRowFromPermission(p: Permission | PermissionWithAro): DraftRow {
         };
     }
     if (p.aro === 'Group' && embedded.group) {
-        return { ...base, label: embedded.group.name, sublabel: 'Group' };
+        return { ...base, label: embedded.group.name, sublabel: '群组' };
     }
     return base;
 }
@@ -309,7 +309,7 @@ export function ShareDialog({
                 // Don't block sharing if the ACL couldn't be read — the user can
                 // still add people; we just couldn't show the current access.
                 setPermissionsError(
-                    errMessage(err, 'Could not load the current access list for this resource.'),
+                    errMessage(err, '无法加载该资源的当前访问列表。'),
                 );
                 setRows([]);
             } finally {
@@ -396,7 +396,7 @@ export function ShareDialog({
                 setSearchError(null);
             } catch (err: unknown) {
                 if (seq !== searchSeq.current) return;
-                setSearchError(errMessage(err, 'Search failed. Please try again.'));
+                setSearchError(errMessage(err, '搜索失败，请重试。'));
                 setResults([]);
             } finally {
                 if (seq === searchSeq.current) setSearching(false);
@@ -540,7 +540,7 @@ export function ShareDialog({
             const result = await simulateShare(resourceId, perms);
             setSimulation(result);
         } catch (err: unknown) {
-            setApplyError(errMessage(err, 'Simulation failed.'));
+            setApplyError(errMessage(err, '模拟失败。'));
             setSimulation(null);
         } finally {
             setSimulating(false);
@@ -599,7 +599,7 @@ export function ShareDialog({
         const armored = user.gpgkey?.armored_key;
         const who = user.username || userId;
         if (!armored) {
-            throw new Error(`No public key found for ${who}. They cannot be granted access yet.`);
+            throw new Error(`未找到 ${who} 的公钥，暂时无法授予其访问权限。`);
         }
         // E2EE: verify the armored key matches the server-reported fingerprint before
         // we ever encrypt a secret to it (server is untrusted on key distribution).
@@ -613,11 +613,11 @@ export function ShareDialog({
     const handleApply = useCallback(async () => {
         if (!resourceId) return;
         if (isLocked) {
-            setApplyError('Your vault is locked. Unlock with your passphrase to share.');
+            setApplyError('保险库已锁定。请用 passphrase 解锁后再共享。');
             return;
         }
         if (!hasChanges) {
-            setApplyError('No changes to apply.');
+            setApplyError('没有可应用的变更。');
             return;
         }
 
@@ -641,7 +641,7 @@ export function ShareDialog({
                         const key = await resolveUserKey(row.aroForeignKey);
                         recipientKeys.set(row.aroForeignKey, key);
                     } catch (err: unknown) {
-                        recipientErrors.push(errMessage(err, `Could not resolve key for ${row.label}.`));
+                        recipientErrors.push(errMessage(err, `无法获取 ${row.label} 的密钥。`));
                     }
                 } else {
                     // Group: fetch members + their gpgkeys.
@@ -654,7 +654,7 @@ export function ShareDialog({
                         });
                     } catch (err: unknown) {
                         recipientErrors.push(
-                            errMessage(err, `Could not load members of group "${row.label}".`),
+                            errMessage(err, `无法加载群组「${row.label}」的成员。`),
                         );
                         continue;
                     }
@@ -678,7 +678,7 @@ export function ShareDialog({
                                 continue;
                             } catch (err: unknown) {
                                 recipientErrors.push(
-                                    errMessage(err, `Could not verify key for ${who} (group "${row.label}").`),
+                                    errMessage(err, `无法验证 ${who} 的密钥（群组「${row.label}」）。`),
                                 );
                                 continue;
                             }
@@ -688,7 +688,7 @@ export function ShareDialog({
                             recipientKeys.set(memberId, key);
                         } catch (err: unknown) {
                             recipientErrors.push(
-                                errMessage(err, `Could not resolve key for ${who} (group "${row.label}").`),
+                                errMessage(err, `无法获取 ${who} 的密钥（群组「${row.label}」）。`),
                             );
                         }
                     }
@@ -700,7 +700,7 @@ export function ShareDialog({
             // correctly-encrypted secret would silently lock that user out.
             if (recipientErrors.length > 0) {
                 setApplyError(
-                    `Cannot share — missing recipient keys: ${recipientErrors.join(' ')}`,
+                    `无法共享 — 缺少收件人密钥：${recipientErrors.join(' ')}`,
                 );
                 setApplying(false);
                 return;
@@ -712,7 +712,7 @@ export function ShareDialog({
                 // 1. Fetch + decrypt the existing secret with the in-memory private key.
                 const existing = await getSecretForResource(resourceId);
                 if (!existing?.data) {
-                    throw new Error('Could not read the existing secret for this resource.');
+                    throw new Error('无法读取该资源现有的密文。');
                 }
                 const plaintext = await decrypt(existing.data);
 
@@ -730,13 +730,13 @@ export function ShareDialog({
             await applyShare('resource', resourceId, { permissions, secrets });
 
             toast.success(
-                resourceName ? `"${resourceName}" shared successfully.` : 'Share updated successfully.',
+                resourceName ? `「${resourceName}」已成功共享。` : '共享已成功更新。',
             );
             onShared?.();
             onClose(true);
         } catch (err: unknown) {
-            setApplyError(errMessage(err, 'Failed to apply share.'));
-            toast.error('Could not apply the share.');
+            setApplyError(errMessage(err, '应用共享失败。'));
+            toast.error('无法应用此次共享。');
         } finally {
             setApplying(false);
         }
@@ -762,39 +762,45 @@ export function ShareDialog({
     return (
         <Modal
             open={open}
-            title={resourceName ? `Share "${resourceName}"` : 'Share resource'}
+            title={resourceName ? `共享「${resourceName}」` : '共享资源'}
             onClose={() => !busy && onClose(false)}
             maxWidth={620}
             closeOnBackdrop={!busy}
             footer={
                 <>
-                    <button className="btn btn-secondary" onClick={() => onClose(false)} disabled={busy}>
-                        Close
+                    <span style={{ fontSize: 12, color: 'var(--text-3)', marginRight: 'auto' }}>
+                        {rows.filter((r) => !r.deleted).length} 个访问者
+                    </span>
+                    <button className="btn" onClick={() => onClose(false)} disabled={busy}>
+                        取消
                     </button>
                     <button
-                        className="btn btn-secondary"
+                        className="btn"
                         onClick={handleSimulate}
                         disabled={busy || simulating || !hasChanges}
-                        title="Preview who would gain or lose access"
+                        title="预览谁将获得或失去访问权限"
                     >
                         {simulating ? <Spinner size={16} /> : null}
-                        {simulating ? 'Simulating…' : 'Simulate'}
+                        {simulating ? '模拟中…' : '模拟'}
                     </button>
                     <button
-                        className="btn btn-primary"
+                        className="btn primary"
                         onClick={handleApply}
                         disabled={busy || isLocked || !hasChanges}
                     >
-                        {applying ? <Spinner size={16} color="#fff" /> : null}
-                        {applying ? 'Sharing…' : 'Apply'}
+                        {applying ? (
+                            <Spinner size={16} color="#fff" />
+                        ) : newlyAdded.length > 0 ? (
+                            <RefreshCw size={16} />
+                        ) : null}
+                        {applying ? '加密并共享中…' : newlyAdded.length > 0 ? '加密并共享' : '保存'}
                     </button>
                 </>
             }
         >
             {isLocked && (
                 <Banner variant="warning" icon={<LockIcon size={16} />}>
-                    Your vault is locked. Unlock with your passphrase to share — re-encrypting the
-                    secret for new recipients requires your private key in memory.
+                    保险库已锁定。请用 passphrase 解锁后再共享 —— 为新收件人重新加密密文需要你的私钥保留在内存中。
                 </Banner>
             )}
 
@@ -805,21 +811,12 @@ export function ShareDialog({
             )}
 
             {/* ---- Search ---- */}
-            <div className="form-group" style={{ marginBottom: 16 }}>
-                <label className="form-label" htmlFor="share-search">
-                    Add people or groups
-                </label>
-                <div style={{ position: 'relative' }}>
-                    <Search
-                        size={16}
-                        color="var(--text-muted)"
-                        style={{ position: 'absolute', left: 12, top: 14, pointerEvents: 'none' }}
-                    />
+            <div className="aro-search" style={{ marginBottom: 16 }}>
+                <div className="searchbox">
+                    <Search />
                     <input
                         id="share-search"
-                        className="form-control"
-                        style={{ paddingLeft: 36 }}
-                        placeholder="Search by name, username, or group…"
+                        placeholder="按姓名、用户名或群组搜索…"
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         autoComplete="off"
@@ -829,28 +826,20 @@ export function ShareDialog({
 
                 {/* Search results dropdown */}
                 {query.trim().length > 0 && (
-                    <div
-                        className="glass-panel"
-                        style={{
-                            marginTop: 6,
-                            maxHeight: 220,
-                            overflowY: 'auto',
-                            padding: 4,
-                        }}
-                    >
+                    <div className="aro-results">
                         {searching && (
-                            <div style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 13 }}>
-                                <Spinner size={14} /> Searching…
+                            <div style={{ padding: '11px 12px', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-3)', fontSize: 13 }}>
+                                <Spinner size={14} /> 搜索中…
                             </div>
                         )}
                         {!searching && searchError && (
-                            <div style={{ padding: '12px', color: 'var(--danger-color)', fontSize: 13 }}>
+                            <div style={{ padding: '11px 12px', color: 'var(--red-text)', fontSize: 13 }}>
                                 {searchError}
                             </div>
                         )}
                         {!searching && !searchError && results.length === 0 && (
-                            <div style={{ padding: '12px', color: 'var(--text-muted)', fontSize: 13 }}>
-                                No matches.
+                            <div style={{ padding: '11px 12px', color: 'var(--text-3)', fontSize: 13 }}>
+                                没有匹配项。
                             </div>
                         )}
                         {!searching &&
@@ -863,38 +852,34 @@ export function ShareDialog({
                                     <button
                                         key={`${isUser ? 'u' : 'g'}-${aro.id}`}
                                         type="button"
+                                        className="aro-opt"
                                         onClick={() => addAro(aro)}
-                                        style={searchRowStyle}
-                                        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
-                                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                                     >
                                         {isUser ? (
                                             <Avatar
-                                                size={28}
+                                                size={30}
                                                 src={profile?.avatar?.url?.small}
                                                 firstName={profile?.first_name}
                                                 lastName={profile?.last_name}
                                                 name={label}
                                             />
                                         ) : (
-                                            <span className="avatar" style={{ width: 28, height: 28, fontSize: 12 }}>
-                                                <UsersIcon size={14} />
+                                            <span className="avatar" style={{ width: 30, height: 30, fontSize: 12 }}>
+                                                <UsersIcon size={15} />
                                             </span>
                                         )}
-                                        <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                                            <span style={{ display: 'block', fontSize: 14, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        <span className="aro-info">
+                                            <span className="an" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                 {label}
                                             </span>
-                                            {sublabel && (
-                                                <span style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)' }}>
-                                                    {sublabel}
-                                                </span>
-                                            )}
+                                            {sublabel && <span className="ae">{sublabel}</span>}
                                         </span>
-                                        <Badge variant={isUser ? 'primary' : 'default'} icon={isUser ? <UserRound size={11} /> : <UsersIcon size={11} />}>
-                                            {isUser ? 'User' : 'Group'}
+                                        <Badge variant={isUser ? 'primary' : 'default'} icon={<UsersIcon size={11} />}>
+                                            {isUser ? '用户' : '群组'}
                                         </Badge>
-                                        <Plus size={16} color="var(--text-muted)" />
+                                        <span className="add">
+                                            <Plus />
+                                        </span>
                                     </button>
                                 );
                             })}
@@ -904,8 +889,8 @@ export function ShareDialog({
 
             {/* ---- Current / draft permissions ---- */}
             <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 8 }}>
-                    Who has access
+                <div style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 500, marginBottom: 8 }}>
+                    谁有访问权限
                 </div>
                 {permissionsError && (
                     <div style={{ marginBottom: 8 }}>
@@ -915,28 +900,20 @@ export function ShareDialog({
                     </div>
                 )}
                 {loadingPermissions ? (
-                    <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 13, border: '1px dashed var(--panel-border)', borderRadius: 'var(--radius-sm)' }}>
-                        <Spinner size={14} /> Loading current access…
+                    <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text-3)', fontSize: 13, border: '1px dashed var(--border)', borderRadius: 'var(--r)' }}>
+                        <Spinner size={14} /> 正在加载当前访问列表…
                     </div>
                 ) : rows.length === 0 ? (
-                    <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', border: '1px dashed var(--panel-border)', borderRadius: 'var(--radius-sm)' }}>
-                        No one has access yet. Search above to share with people or groups.
+                    <div style={{ padding: '16px', color: 'var(--text-3)', fontSize: 13, textAlign: 'center', border: '1px dashed var(--border)', borderRadius: 'var(--r)' }}>
+                        目前还没有人拥有访问权限。在上方搜索以与成员或群组共享。
                     </div>
                 ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div className="matrix">
                         {rows.map((row, idx) => (
                             <div
+                                className="matrix-row"
                                 key={`${row.aro}-${row.aroForeignKey}-${row.permissionId ?? 'new'}`}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 10,
-                                    padding: '8px 10px',
-                                    borderRadius: 'var(--radius-sm)',
-                                    background: row.deleted ? 'rgba(248,81,73,0.06)' : 'rgba(255,255,255,0.03)',
-                                    border: '1px solid var(--panel-border)',
-                                    opacity: row.deleted ? 0.6 : 1,
-                                }}
+                                style={row.deleted ? { background: 'var(--red-soft)', opacity: 0.7 } : undefined}
                             >
                                 {row.aro === 'User' ? (
                                     <Avatar
@@ -951,53 +928,67 @@ export function ShareDialog({
                                         <UsersIcon size={15} />
                                     </span>
                                 )}
-                                <span style={{ flex: 1, minWidth: 0 }}>
-                                    <span style={{ display: 'block', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: row.deleted ? 'line-through' : 'none' }}>
+                                <span className="aro-info">
+                                    <span
+                                        className="an"
+                                        style={{
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            textDecoration: row.deleted ? 'line-through' : 'none',
+                                        }}
+                                    >
                                         {row.label}
-                                    </span>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
-                                        {row.sublabel}
                                         {row.isNew && !row.deleted && (
-                                            <Badge variant="success">New</Badge>
+                                            <span className="chip green" style={{ padding: '1px 6px' }}>
+                                                新增
+                                            </span>
                                         )}
-                                        {row.deleted && <Badge variant="danger">Removing</Badge>}
+                                        {row.deleted && (
+                                            <span className="chip red" style={{ padding: '1px 6px' }}>
+                                                移除
+                                            </span>
+                                        )}
                                     </span>
+                                    <span className="ae">{row.sublabel}</span>
                                 </span>
 
-                                <select
-                                    className="form-control"
-                                    style={{ width: 'auto', padding: '6px 10px', fontSize: 13 }}
-                                    value={row.type}
-                                    disabled={busy || row.deleted}
-                                    onChange={(e) => changeRowType(idx, Number(e.target.value) as PermissionType)}
-                                >
+                                <div className="perm-select">
                                     {PERMISSION_OPTIONS.map((opt) => (
-                                        <option key={opt.value} value={opt.value}>
+                                        <button
+                                            key={opt.value}
+                                            type="button"
+                                            className={
+                                                (row.type === opt.value ? 'sel' : '') +
+                                                (opt.value === PERMISSION.OWNER ? ' owner' : '')
+                                            }
+                                            disabled={busy || row.deleted}
+                                            onClick={() => changeRowType(idx, opt.value)}
+                                        >
                                             {opt.label}
-                                        </option>
+                                        </button>
                                     ))}
-                                </select>
+                                </div>
 
                                 {row.deleted ? (
                                     <button
                                         type="button"
-                                        className="btn btn-secondary"
-                                        style={{ padding: '6px 12px', fontSize: 13 }}
+                                        className="btn sm"
                                         onClick={() => undoRemove(idx)}
                                         disabled={busy}
                                     >
-                                        Undo
+                                        撤销
                                     </button>
                                 ) : (
                                     <button
                                         type="button"
-                                        className="icon-btn danger"
+                                        className="rm-aro"
                                         onClick={() => removeRow(idx)}
                                         disabled={busy}
-                                        aria-label={`Remove ${row.label}`}
-                                        title="Remove access"
+                                        aria-label={`移除 ${row.label}`}
+                                        title="移除访问权限"
                                     >
-                                        <Trash2 size={15} />
+                                        <XIcon />
                                     </button>
                                 )}
                             </div>
@@ -1005,6 +996,18 @@ export function ShareDialog({
                     </div>
                 )}
             </div>
+
+            {/* ---- Re-encrypt summary (only when there are newly-added recipients) ---- */}
+            {newlyAdded.length > 0 && (
+                <div className="reencrypt">
+                    <div className="re-head">
+                        <RefreshCw /> 将为这些新收件人重新加密密文
+                    </div>
+                    <div className="re-sub">
+                        新增 {newlyAdded.length} 个对象 · 每份密文都使用收件人自己的公钥单独封装，你的私钥与 passphrase 始终留在本地，永不离开设备。
+                    </div>
+                </div>
+            )}
 
             {/* ---- Simulation preview ---- */}
             {simulation && <SimulationPreview result={simulation} names={aroNames} />}
@@ -1028,33 +1031,33 @@ function SimulationPreview({
     const display = (id: string) => names[id] ?? id.slice(0, 8);
     return (
         <div
-            className="glass-panel"
-            style={{ marginTop: 12, padding: '12px 14px', fontSize: 13 }}
+            className="reencrypt"
+            style={{ marginTop: 12, fontSize: 13 }}
         >
-            <div style={{ color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 8 }}>
-                Simulation result
+            <div style={{ color: 'var(--text-2)', fontWeight: 500, marginBottom: 10 }}>
+                模拟结果
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-                <span style={{ color: 'var(--text-muted)', marginRight: 4 }}>Gains access:</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <span style={{ color: 'var(--text-3)', marginRight: 4 }}>获得访问：</span>
                 {added.length === 0 ? (
-                    <span style={{ color: 'var(--text-muted)' }}>none</span>
+                    <span style={{ color: 'var(--text-3)' }}>无</span>
                 ) : (
                     added.map((a) => (
-                        <Badge key={`a-${a.User.id}`} variant="success">
+                        <span key={`a-${a.User.id}`} className="chip green">
                             {display(a.User.id)}
-                        </Badge>
+                        </span>
                     ))
                 )}
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                <span style={{ color: 'var(--text-muted)', marginRight: 4 }}>Loses access:</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: 'var(--text-3)', marginRight: 4 }}>失去访问：</span>
                 {removed.length === 0 ? (
-                    <span style={{ color: 'var(--text-muted)' }}>none</span>
+                    <span style={{ color: 'var(--text-3)' }}>无</span>
                 ) : (
                     removed.map((r) => (
-                        <Badge key={`r-${r.User.id}`} variant="danger">
+                        <span key={`r-${r.User.id}`} className="chip red">
                             {display(r.User.id)}
-                        </Badge>
+                        </span>
                     ))
                 )}
             </div>
@@ -1074,8 +1077,12 @@ function Banner({
     variant: 'error' | 'warning';
     icon?: ReactNode;
 }) {
-    const color = variant === 'error' ? 'var(--danger-color)' : '#d29922';
-    const bg = variant === 'error' ? 'rgba(248, 81, 73, 0.1)' : 'rgba(210, 153, 34, 0.1)';
+    const color = variant === 'error' ? 'var(--red-text)' : 'var(--amber-text)';
+    const bg = variant === 'error' ? 'var(--red-soft)' : 'var(--amber-soft)';
+    const borderColor =
+        variant === 'error'
+            ? 'color-mix(in oklch, var(--red) 30%, transparent)'
+            : 'color-mix(in oklch, var(--amber) 35%, transparent)';
     return (
         <div
             style={{
@@ -1084,8 +1091,8 @@ function Banner({
                 gap: 8,
                 background: bg,
                 color,
-                border: `1px solid ${color}`,
-                borderRadius: 'var(--radius-sm)',
+                border: `1px solid ${borderColor}`,
+                borderRadius: 'var(--r)',
                 padding: '10px 12px',
                 fontSize: 13,
                 lineHeight: 1.5,
@@ -1097,18 +1104,5 @@ function Banner({
         </div>
     );
 }
-
-const searchRowStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    width: '100%',
-    padding: '8px 10px',
-    border: 'none',
-    background: 'transparent',
-    borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer',
-    transition: 'background var(--transition-fast)',
-};
 
 export default ShareDialog;

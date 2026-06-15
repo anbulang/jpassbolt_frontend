@@ -47,7 +47,6 @@ import axios from 'axios';
 import { Modal } from '../components/Modal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { FullSpinner, Spinner } from '../components/Spinner';
-import { EmptyState } from '../components/EmptyState';
 import { Avatar } from '../components/Avatar';
 import { Badge } from '../components/Badge';
 import { useToast } from '../components/toastContext';
@@ -99,22 +98,10 @@ function errorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
-const sharedBannerStyle: React.CSSProperties = {
-  padding: '12px 16px',
-  background: 'rgba(248, 81, 73, 0.1)',
-  border: '1px solid var(--danger-color)',
-  color: 'var(--danger-color)',
-  borderRadius: 'var(--radius-sm)',
-  fontSize: '14px',
-  display: 'flex',
-  alignItems: 'flex-start',
-  gap: '8px',
-};
-
 function ErrorBanner({ message }: { message: string }) {
   return (
-    <div style={sharedBannerStyle} role="alert">
-      <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+    <div className="warnbox" role="alert">
+      <AlertTriangle />
       <span>{message}</span>
     </div>
   );
@@ -246,126 +233,66 @@ export default function Groups() {
 
   return (
     <>
-      <div className="container" style={{ maxWidth: '1100px' }}>
-        {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '24px',
-            gap: '16px',
-          }}
-        >
-          <div>
-            <h1 style={{ margin: 0, fontWeight: 600, letterSpacing: '-0.5px' }}>Groups</h1>
-            <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-              Organize users into groups to share passwords at scale.
-            </p>
-          </div>
-          {isAdmin && (
-            <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-              <Plus size={16} /> New Group
-            </button>
-          )}
-        </div>
-
+      <div className="page">
         {listError && (
-          <div style={{ marginBottom: '20px' }}>
+          <div style={{ padding: '16px 28px 0' }}>
             <ErrorBanner message={listError} />
           </div>
         )}
 
         {listLoading ? (
-          <FullSpinner label="Loading groups..." />
+          <FullSpinner label="正在加载群组…" />
         ) : groups.length === 0 && !listError ? (
-          <EmptyState
-            icon={UsersRound}
-            title="No groups yet"
-            description={
-              isAdmin
-                ? 'Create a group to share passwords with a set of users at once.'
-                : 'You are not a member of any group yet.'
-            }
-            action={
-              isAdmin ? (
-                <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>
-                  <Plus size={16} /> New Group
-                </button>
-              ) : undefined
-            }
-          />
+          <div className="empty" style={{ flex: 1 }}>
+            <div className="ico">
+              <UsersRound />
+            </div>
+            <h3>还没有任何群组</h3>
+            <p>
+              {isAdmin
+                ? '创建一个群组，即可一次性把密码共享给一组用户。'
+                : '你还不是任何群组的成员。'}
+            </p>
+            {isAdmin && (
+              <button className="btn primary" onClick={() => setCreateOpen(true)}>
+                <Plus /> 新建群组
+              </button>
+            )}
+          </div>
         ) : (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '320px 1fr',
-              gap: '20px',
-              alignItems: 'start',
-            }}
-          >
+          <div className="glayout">
             {/* Master list */}
-            <div className="glass-panel" style={{ overflow: 'hidden' }}>
-              <div
-                style={{
-                  padding: '14px 16px',
-                  borderBottom: '1px solid var(--panel-border)',
-                  fontSize: '13px',
-                  color: 'var(--text-secondary)',
-                  fontWeight: 500,
-                }}
-              >
-                {groups.length} {groups.length === 1 ? 'group' : 'groups'}
+            <div className="glist">
+              <div className="glist-head">
+                <h3>群组 · {groups.length}</h3>
+                {isAdmin && (
+                  <button className="btn sm primary" onClick={() => setCreateOpen(true)}>
+                    <Plus /> 新建
+                  </button>
+                )}
               </div>
-              <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+              <div className="glist-scroll">
                 {groups.map((g) => {
                   const active = g.id === selectedId;
                   const count = g.groups_users?.length ?? g.user_count;
+                  const manages = isAdmin || Boolean(g.my_group_user?.is_admin);
                   return (
                     <button
                       key={g.id}
+                      className={'gcard' + (active ? ' active' : '')}
                       onClick={() => setSelectedId(g.id)}
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '10px',
-                        padding: '12px 16px',
-                        background: active ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
-                        borderLeft: active
-                          ? '2px solid var(--primary-color)'
-                          : '2px solid transparent',
-                        border: 'none',
-                        borderBottom: '1px solid var(--panel-border)',
-                        color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all var(--transition-fast)',
-                      }}
                     >
-                      <span
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          minWidth: 0,
-                        }}
-                      >
-                        <UsersRound size={16} style={{ flexShrink: 0 }} />
-                        <span
-                          style={{
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            fontWeight: 500,
-                          }}
-                        >
-                          {g.name}
+                      <Avatar name={g.name} size={38} />
+                      <div className="gc-info">
+                        <div className="gn">{g.name}</div>
+                        <div className="gm">
+                          {count !== undefined ? `${count} 名成员` : '成员'}
+                        </div>
+                      </div>
+                      {manages && (
+                        <span className="admin-badge" title="你是群管理员">
+                          <ShieldCheck />
                         </span>
-                      </span>
-                      {count !== undefined && (
-                        <Badge variant={active ? 'primary' : 'default'}>{count}</Badge>
                       )}
                     </button>
                   );
@@ -374,7 +301,7 @@ export default function Groups() {
             </div>
 
             {/* Detail */}
-            <div className="glass-panel" style={{ minHeight: '320px' }}>
+            <div className="gdetail">
               {selectedGroup ? (
                 <GroupDetail
                   group={selectedGroup}
@@ -387,13 +314,12 @@ export default function Groups() {
                   onDelete={() => setDeleteOpen(true)}
                 />
               ) : (
-                <div style={{ padding: '60px 20px' }}>
-                  <EmptyState
-                    icon={UsersRound}
-                    title="Select a group"
-                    description="Pick a group on the left to view its members."
-                    panel={false}
-                  />
+                <div className="empty" style={{ flex: 1 }}>
+                  <div className="ico">
+                    <UsersRound />
+                  </div>
+                  <h3>选择一个群组</h3>
+                  <p>在左侧挑选一个群组以查看其成员。</p>
                 </div>
               )}
             </div>
@@ -407,7 +333,7 @@ export default function Groups() {
           onClose={() => setCreateOpen(false)}
           onCreated={async (newId) => {
             setCreateOpen(false);
-            toast.success('Group created.');
+            toast.success('群组已创建。');
             await loadGroups();
             setSelectedId(newId);
           }}
@@ -422,7 +348,7 @@ export default function Groups() {
           onClose={() => setRenameOpen(false)}
           onRenamed={async () => {
             setRenameOpen(false);
-            toast.success('Group renamed.');
+            toast.success('群组已重命名。');
             await loadGroups();
             if (selectedId) await loadDetail(selectedId);
           }}
@@ -440,7 +366,7 @@ export default function Groups() {
           onClose={() => setManageOpen(false)}
           onSaved={async () => {
             setManageOpen(false);
-            toast.success('Membership updated.');
+            toast.success('成员已更新。');
             await loadGroups();
             if (selectedId) await loadDetail(selectedId);
           }}
@@ -455,7 +381,7 @@ export default function Groups() {
           onClose={() => setDeleteOpen(false)}
           onDeleted={async () => {
             setDeleteOpen(false);
-            toast.success('Group deleted.');
+            toast.success('群组已删除。');
             setSelectedId(null);
             await loadGroups();
           }}
@@ -490,172 +416,105 @@ function GroupDetail({
   onDelete: () => void;
 }) {
   return (
-    <div>
+    <>
       {/* Detail header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '12px',
-          padding: '20px 24px',
-          borderBottom: '1px solid var(--panel-border)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-          <span
-            style={{
-              display: 'inline-flex',
-              padding: '10px',
-              background: 'rgba(0, 112, 243, 0.12)',
-              borderRadius: 'var(--radius-sm)',
-            }}
-          >
-            <UsersRound size={20} color="var(--primary-color)" />
-          </span>
-          <div style={{ minWidth: 0 }}>
-            <h2
-              style={{
-                margin: 0,
-                fontSize: '18px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {group.name}
-            </h2>
-            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-              {members.length} {members.length === 1 ? 'member' : 'members'}
+      <div className="gd-head">
+        <div className="gd-ico" style={{ background: 'var(--accent)' }}>
+          <UsersRound />
+        </div>
+        <div className="gd-t">
+          <h2>{group.name}</h2>
+          <p>&nbsp;</p>
+          <div className="gd-meta">
+            <span className="chip neutral">
+              <UsersRound /> {members.length} 名成员
             </span>
+            {canManage && (
+              <span className="chip green">
+                <ShieldCheck /> 你是群管理员
+              </span>
+            )}
           </div>
         </div>
 
         {canManage && (
           <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
             <button
-              className="btn btn-secondary"
-              style={{ padding: '8px 12px' }}
+              className="btn primary"
               onClick={onManage}
-              title="Add or remove members"
+              title="添加或移除成员"
             >
-              <UserPlus size={16} /> Members
+              <UserPlus /> 成员
             </button>
             <button
-              className="icon-btn"
+              className="iconbtn"
               onClick={onRename}
-              title="Rename group"
-              aria-label="Rename group"
+              title="重命名群组"
+              aria-label="重命名群组"
             >
-              <Pencil size={16} />
+              <Pencil />
             </button>
             <button
-              className="icon-btn danger"
+              className="iconbtn"
               onClick={onDelete}
-              title="Delete group"
-              aria-label="Delete group"
+              title="删除群组"
+              aria-label="删除群组"
+              style={{ color: 'var(--red-text)' }}
             >
-              <Trash2 size={16} />
+              <Trash2 />
             </button>
           </div>
         )}
       </div>
 
       {/* Detail body */}
-      <div style={{ padding: '8px 0' }}>
-        {error && (
-          <div style={{ padding: '16px 24px' }}>
-            <ErrorBanner message={error} />
-          </div>
-        )}
+      {error && (
+        <div style={{ padding: '16px 28px 0' }}>
+          <ErrorBanner message={error} />
+        </div>
+      )}
 
-        {loading ? (
-          <FullSpinner label="Loading members..." />
-        ) : members.length === 0 && !error ? (
-          <div style={{ padding: '40px 20px' }}>
-            <EmptyState
-              icon={UsersRound}
-              title="No members"
-              description={
-                canManage
-                  ? 'Add users to this group to start sharing.'
-                  : 'This group has no members yet.'
-              }
-              panel={false}
-            />
+      {loading ? (
+        <FullSpinner label="正在加载成员…" />
+      ) : members.length === 0 && !error ? (
+        <div className="empty" style={{ padding: '48px 20px' }}>
+          <div className="ico">
+            <UsersRound />
           </div>
-        ) : (
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {members.map((gu) => (
-              <li
-                key={gu.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  padding: '12px 24px',
-                  borderBottom: '1px solid var(--panel-border)',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    minWidth: 0,
-                  }}
-                >
-                  <Avatar
-                    src={gu.user?.profile?.avatar?.url?.small ?? null}
-                    firstName={gu.user?.profile?.first_name}
-                    lastName={gu.user?.profile?.last_name}
-                    name={gu.user?.username}
-                    size={36}
-                  />
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontWeight: 500,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {userName(gu.user)}
-                    </div>
-                    {gu.user?.username && (
-                      <div
-                        style={{
-                          fontSize: '13px',
-                          color: 'var(--text-muted)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {gu.user.username}
-                      </div>
-                    )}
-                  </div>
+          <h3>暂无成员</h3>
+          <p>{canManage ? '为该群组添加用户即可开始共享。' : '该群组还没有任何成员。'}</p>
+        </div>
+      ) : (
+        <div className="gd-section">
+          <h4>
+            成员 <span className="ct">{members.length}</span>
+            <span className="h4-spacer" />
+          </h4>
+          {members.map((gu) => (
+            <div className="member-row" key={gu.id}>
+              <Avatar
+                src={gu.user?.profile?.avatar?.url?.small ?? null}
+                firstName={gu.user?.profile?.first_name}
+                lastName={gu.user?.profile?.last_name}
+                name={gu.user?.username}
+                size={38}
+              />
+              <div className="mr-info">
+                <div className="mn">
+                  {userName(gu.user)}
+                  {gu.is_admin && (
+                    <span className="admin-badge" title="群管理员">
+                      <ShieldCheck /> 群管理员
+                    </span>
+                  )}
                 </div>
-                {gu.is_admin ? (
-                  <Badge
-                    variant="primary"
-                    icon={<ShieldCheck size={12} />}
-                    title="Group manager"
-                  >
-                    Manager
-                  </Badge>
-                ) : (
-                  <Badge variant="muted">Member</Badge>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
+                {gu.user?.username && <div className="me">{gu.user.username}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -706,16 +565,16 @@ function CreateGroupModal({
   return (
     <Modal
       open
-      title="New group"
+      title="新建群组"
       onClose={onClose}
       maxWidth={440}
       footer={
         <>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>
-            Cancel
+            取消
           </button>
           <button className="btn btn-primary" onClick={submit} disabled={saving}>
-            {saving ? 'Creating...' : 'Create group'}
+            {saving ? '正在创建…' : '创建群组'}
           </button>
         </>
       }
@@ -727,14 +586,14 @@ function CreateGroupModal({
       )}
       <div className="form-group" style={{ marginBottom: 0 }}>
         <label className="form-label" htmlFor="group-name">
-          Group name
+          群组名称
         </label>
         <input
           id="group-name"
           className="form-control"
           autoFocus
           value={name}
-          placeholder="e.g. Engineering"
+          placeholder="例如：工程团队"
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') void submit();
@@ -742,8 +601,8 @@ function CreateGroupModal({
           disabled={saving}
         />
       </div>
-      <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '12px' }}>
-        You will be added as the group's first manager. Add more members from the group detail.
+      <p style={{ color: 'var(--text-3)', fontSize: '13px', marginTop: '12px' }}>
+        你将作为该群组的首位管理员。可在群组详情中继续添加更多成员。
       </p>
     </Modal>
   );
@@ -795,16 +654,16 @@ function RenameGroupModal({
   return (
     <Modal
       open
-      title="Rename group"
+      title="重命名群组"
       onClose={onClose}
       maxWidth={440}
       footer={
         <>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>
-            Cancel
+            取消
           </button>
           <button className="btn btn-primary" onClick={submit} disabled={saving}>
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? '正在保存…' : '保存'}
           </button>
         </>
       }
@@ -816,7 +675,7 @@ function RenameGroupModal({
       )}
       <div className="form-group" style={{ marginBottom: 0 }}>
         <label className="form-label" htmlFor="rename-group">
-          Group name
+          群组名称
         </label>
         <input
           id="rename-group"
@@ -1116,17 +975,17 @@ function ManageMembersModal({
   return (
     <Modal
       open
-      title={`Manage members — ${group.name}`}
+      title={`管理成员 · ${group.name}`}
       onClose={saving ? () => undefined : onClose}
       maxWidth={560}
       closeOnBackdrop={!saving}
       footer={
         <>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>
-            Cancel
+            取消
           </button>
           <button className="btn btn-primary" onClick={save} disabled={saving}>
-            {saving ? 'Saving...' : 'Save changes'}
+            {saving ? '正在保存…' : '保存更改'}
           </button>
         </>
       }
@@ -1138,47 +997,25 @@ function ManageMembersModal({
       )}
 
       {saving && progress && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '10px 14px',
-            marginBottom: '16px',
-            background: 'rgba(0, 112, 243, 0.1)',
-            border: '1px solid rgba(0, 112, 243, 0.3)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: '13px',
-            color: 'var(--primary-hover)',
-          }}
-        >
+        <div className="reencrypt-banner" style={{ margin: '0 0 16px' }}>
           <Spinner size={16} />
-          <span>{progress}</span>
+          <div className="rb-text">
+            <b>正在为新成员重新加密群密文…</b>
+            <div className="s">{progress} · 私钥永不离开各自设备</div>
+          </div>
         </div>
       )}
 
       {/* Add-member search */}
       <div className="form-group">
         <label className="form-label" htmlFor="member-search">
-          Add a member
+          添加成员
         </label>
-        <div style={{ position: 'relative' }}>
-          <Search
-            size={16}
-            style={{
-              position: 'absolute',
-              left: '12px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: 'var(--text-muted)',
-              pointerEvents: 'none',
-            }}
-          />
+        <div className="searchbox">
+          <Search />
           <input
             id="member-search"
-            className="form-control"
-            style={{ paddingLeft: '36px' }}
-            placeholder="Search users by name or username"
+            placeholder="按姓名或用户名搜索用户"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             disabled={saving}
@@ -1187,28 +1024,19 @@ function ManageMembersModal({
         </div>
 
         {(searching || results.length > 0) && search.trim().length > 0 && (
-          <div
-            style={{
-              marginTop: '8px',
-              border: '1px solid var(--panel-border)',
-              borderRadius: 'var(--radius-sm)',
-              maxHeight: '220px',
-              overflowY: 'auto',
-              background: 'rgba(0, 0, 0, 0.2)',
-            }}
-          >
+          <div className="pick-target" style={{ marginTop: 8 }}>
             {searching ? (
               <div
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
-                  padding: '12px 14px',
-                  color: 'var(--text-muted)',
+                  padding: '12px 11px',
+                  color: 'var(--text-3)',
                   fontSize: '13px',
                 }}
               >
-                <Spinner size={14} /> Searching...
+                <Spinner size={14} /> 正在搜索…
               </div>
             ) : (
               results.map((u) => {
@@ -1217,21 +1045,12 @@ function ManageMembersModal({
                 return (
                   <button
                     key={u.id}
+                    className="pick-opt"
                     onClick={() => !already && addMember(u)}
                     disabled={already}
                     style={{
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '10px 14px',
-                      background: 'transparent',
-                      border: 'none',
-                      borderBottom: '1px solid var(--panel-border)',
-                      color: 'var(--text-primary)',
                       cursor: already ? 'default' : 'pointer',
                       opacity: already ? 0.5 : 1,
-                      textAlign: 'left',
                     }}
                   >
                     <Avatar
@@ -1239,32 +1058,22 @@ function ManageMembersModal({
                       firstName={u.profile?.first_name}
                       lastName={u.profile?.last_name}
                       name={u.username}
-                      size={28}
+                      size={32}
                     />
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      <span
-                        style={{
-                          display: 'block',
-                          fontSize: '14px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {userName(u)}
-                      </span>
-                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                        {u.username}
-                      </span>
-                    </span>
+                    <div className="aro-info">
+                      <div className="an">{userName(u)}</div>
+                      <div className="ae">{u.username}</div>
+                    </div>
                     {already ? (
-                      <Badge variant="muted">Added</Badge>
+                      <Badge variant="muted">已添加</Badge>
                     ) : !hasKey && !u.active ? (
-                      <Badge variant="danger" title="User has not completed setup">
-                        No key
+                      <Badge variant="danger" title="该用户尚未完成账户设置">
+                        无密钥
                       </Badge>
                     ) : (
-                      <Plus size={16} color="var(--text-secondary)" />
+                      <span className="add" style={{ color: 'var(--accent-text)', display: 'inline-flex' }}>
+                        <Plus size={16} />
+                      </span>
                     )}
                   </button>
                 );
@@ -1279,25 +1088,16 @@ function ManageMembersModal({
         <div
           style={{
             fontSize: '13px',
-            color: 'var(--text-secondary)',
+            color: 'var(--text-2)',
             fontWeight: 500,
             marginBottom: '8px',
           }}
         >
-          Members ({visibleDrafts.length})
+          成员（{visibleDrafts.length}）
         </div>
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+        <div>
           {visibleDrafts.map((d) => (
-            <li
-              key={d.user.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '10px 0',
-                borderBottom: '1px solid var(--panel-border)',
-              }}
-            >
+            <div className="member-row" key={d.user.id}>
               <Avatar
                 src={d.user.profile?.avatar?.url?.small ?? null}
                 firstName={d.user.profile?.first_name}
@@ -1305,74 +1105,64 @@ function ManageMembersModal({
                 name={d.user.username}
                 size={32}
               />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: '14px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
+              <div className="mr-info">
+                <div className="mn">
                   {userName(d.user)}
                   {d.isNew && (
-                    <span style={{ marginLeft: '8px' }}>
-                      <Badge variant="success">New</Badge>
+                    <span style={{ marginLeft: '4px' }}>
+                      <Badge variant="success">新增</Badge>
                     </span>
                   )}
                 </div>
-                {d.user.username && (
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                    {d.user.username}
-                  </div>
-                )}
+                {d.user.username && <div className="me">{d.user.username}</div>}
               </div>
 
-              <label
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '13px',
-                  color: 'var(--text-secondary)',
-                  cursor: saving ? 'default' : 'pointer',
-                  userSelect: 'none',
-                }}
-                title="Group managers can edit membership"
-              >
-                <input
-                  type="checkbox"
-                  checked={d.isAdmin}
-                  onChange={() => toggleManager(d.user.id)}
-                  disabled={saving}
-                />
-                Manager
-              </label>
+              <div className="mr-actions">
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '13px',
+                    color: 'var(--text-2)',
+                    cursor: saving ? 'default' : 'pointer',
+                    userSelect: 'none',
+                  }}
+                  title="群管理员可编辑成员"
+                >
+                  <input
+                    type="checkbox"
+                    checked={d.isAdmin}
+                    onChange={() => toggleManager(d.user.id)}
+                    disabled={saving}
+                  />
+                  管理员
+                </label>
 
-              <button
-                className="icon-btn danger"
-                style={{ width: 28, height: 28 }}
-                onClick={() => removeMember(d.user.id)}
-                disabled={saving}
-                title="Remove member"
-                aria-label={`Remove ${userName(d.user)}`}
-              >
-                <XIcon size={14} />
-              </button>
-            </li>
+                <button
+                  className="rowmenu"
+                  onClick={() => removeMember(d.user.id)}
+                  disabled={saving}
+                  title="移除成员"
+                  aria-label={`移除 ${userName(d.user)}`}
+                  style={{ color: 'var(--text-3)' }}
+                >
+                  <XIcon size={16} />
+                </button>
+              </div>
+            </div>
           ))}
-        </ul>
+        </div>
 
         {pendingRemovals.length > 0 && (
-          <div style={{ marginTop: '12px', fontSize: '13px', color: 'var(--text-muted)' }}>
-            {pendingRemovals.length} member(s) will be removed on save.
+          <div style={{ marginTop: '12px', fontSize: '13px', color: 'var(--text-3)' }}>
+            保存后将移除 {pendingRemovals.length} 名成员。
           </div>
         )}
       </div>
 
-      <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '16px' }}>
-        New members automatically receive re-encrypted copies of every secret this group can
-        access. You must keep your vault unlocked while saving.
+      <p style={{ color: 'var(--text-3)', fontSize: '12px', marginTop: '16px' }}>
+        新成员会自动收到该群组可访问的每一份密文的重新加密副本。保存期间请保持密钥库解锁状态。
       </p>
     </Modal>
   );
@@ -1459,8 +1249,8 @@ function DeleteGroupDialog({
     <ConfirmDialog
       open
       danger
-      title={`Delete "${group.name}"?`}
-      confirmLabel="Delete group"
+      title={`删除「${group.name}」？`}
+      confirmLabel="删除群组"
       loading={deleting}
       onCancel={onClose}
       // When blocked or still checking, the confirm button is a no-op guard.
@@ -1468,19 +1258,18 @@ function DeleteGroupDialog({
       message={
         checking ? (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-            <Spinner size={16} /> Checking whether this group can be safely deleted...
+            <Spinner size={16} /> 正在检查该群组能否安全删除…
           </span>
         ) : isBlocked ? (
           <div>
             <p style={{ marginTop: 0 }}>
-              This group cannot be deleted because it is the sole owner of the following
-              password(s). Transfer ownership first, then try again:
+              无法删除该群组，因为它是以下密码的唯一所有者。请先转移所有权后再试：
             </p>
             <ul
               style={{
                 margin: '8px 0 0',
                 paddingLeft: '18px',
-                color: 'var(--danger-color)',
+                color: 'var(--red-text)',
                 maxHeight: '160px',
                 overflowY: 'auto',
               }}
@@ -1494,15 +1283,14 @@ function DeleteGroupDialog({
           <ErrorBanner message={error} />
         ) : (
           <span>
-            Deleting this group removes it for all members and revokes the access it granted to
-            shared passwords. This action cannot be undone.
+            删除该群组会对所有成员移除它，并撤销它所授予的共享密码访问权。此操作不可撤销。
           </span>
         )
       }
       extra={
         isBlocked ? (
           <button className="btn btn-secondary" style={{ width: '100%' }} onClick={onClose}>
-            Close
+            关闭
           </button>
         ) : undefined
       }

@@ -1,27 +1,17 @@
 /**
- * FolderTree (smart component).
+ * FolderTree (smart component) — Aegis "folders" column.
  *
- * Left-navigation folder tree used inside Vault. It:
- *   - fetches the flat /folders.json list and nests it into a tree client-side
- *     (folders.buildFolderTree by folder_parent_id);
- *   - renders "All passwords" (folderId = null) and a virtual "Favorites" node;
- *   - shows each folder with a Folder icon, a personal/shared indicator (Users
- *     icon when personal === false), collapse/expand chevrons, an active
- *     highlight, and a hover "..." menu with Rename / Move / Delete;
- *   - supports create (+ New Folder), rename (PUT /folders/{id}.json),
- *     move (PUT /move/Folder/{id}.json) and delete (DELETE /folders/{id}.json
- *     ?cascade=1|0 driven by a "delete contents too" checkbox);
- *   - accepts HTML5-dropped resources from the Vault table and moves them via
- *     PUT /move/Resource/{id}.json.
- *
- * Theme-matching sidebar styling, loading / error / empty states, useToast.
+ * Left-navigation folder tree used as the first column of the Vault. It:
+ *   - fetches the flat /folders.json list and nests it into a tree client-side;
+ *   - renders smart nodes "全部凭据" (folderId = null) + a virtual "收藏" node;
+ *   - shows each folder with a Folder icon, collapse/expand chevron, an active
+ *     highlight, and a hover "⋯" menu with 重命名 / 移动 / 删除;
+ *   - supports create / rename / move / delete (cascade-aware);
+ *   - accepts HTML5-dropped resources from the resource list and moves them.
  *
  * E2EE note: folders carry no secret material, so this component performs NO
- * crypto. (Moving a resource between folders does not re-encrypt anything; the
- * server only re-parents the permission graph in the current user's tree.)
- *
- * This component OWNS this file only. It imports everything else from the
- * foundation (folders service, shared components, types).
+ * crypto. Only the presentation changed in the Aegis redesign — the data layer,
+ * drag-and-drop contract, and folder CRUD are unchanged.
  */
 import {
   useCallback,
@@ -31,23 +21,21 @@ import {
   useState,
   type DragEvent,
   type FormEvent,
-  type ReactNode,
 } from 'react';
 import {
-  ChevronDown,
   ChevronRight,
   Folder as FolderIcon,
-  FolderPlus,
   MoreHorizontal,
   Pencil,
+  Plus,
   Star,
   Trash2,
   Users,
+  Vault as VaultIcon,
   Move as MoveIcon,
 } from 'lucide-react';
 import { Modal } from './Modal';
 import { ConfirmDialog } from './ConfirmDialog';
-import { Spinner } from './Spinner';
 import { useToast } from './toastContext';
 import type { Folder, FolderNode } from '../types';
 import {
@@ -61,37 +49,24 @@ import {
 } from '../services/folders';
 
 // ---------------------------------------------------------------------------
-// Public contract — kept compatible with the stub that Vault imports.
+// Public contract — kept compatible with the Vault page.
 // ---------------------------------------------------------------------------
 export interface FolderTreeProps {
-  /** Currently selected folder id (null = All passwords / root). */
+  /** Currently selected folder id (null = 全部凭据 / root). */
   selectedFolderId: string | null;
-  /**
-   * Alias accepted for the shorter `selectedId` prop name; `selectedFolderId`
-   * takes precedence when both are supplied.
-   */
+  /** Alias for `selectedFolderId`; the former takes precedence when both set. */
   selectedId?: string | null;
-  /** Called when a folder (or the All node) is selected. null = All passwords. */
+  /** Called when a folder (or the All node) is selected. null = 全部凭据. */
   onSelect: (folderId: string | null) => void;
-  /** Whether the virtual "Favorites" node is active (drives parent's filter). */
+  /** Whether the virtual "收藏" node is active. */
   favoritesOnly?: boolean;
   /** Toggle the parent's favorites-only filter. */
   onToggleFavorites?: (on: boolean) => void;
-  /**
-   * Called after a drag-dropped resource has been successfully moved (the
-   * PUT /move/Resource has resolved). The parent uses this to refresh the
-   * Vault list/folder-membership against post-move server state. Driving the
-   * refresh from move COMPLETION (not the dragend dropEffect) avoids racing
-   * the still-pending move request.
-   */
+  /** Called after a drag-dropped resource has been successfully moved. */
   onResourceMoved?: () => void;
 }
 
-/**
- * The drag-and-drop MIME type the Vault table sets on a dragged resource row.
- * A plain-text fallback is also read so the feature still works if the table
- * only sets `text/plain`.
- */
+/** The drag-and-drop MIME type the resource list sets on a dragged row. */
 export const RESOURCE_DRAG_MIME = 'application/x-jpassbolt-resource-id';
 
 // ---------------------------------------------------------------------------
@@ -111,18 +86,6 @@ function errMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
-/**
- * Read a dragged resource id from a drop event.
- *
- * Contract a drag source must satisfy (set both on `dragstart`):
- *   e.dataTransfer.setData(RESOURCE_DRAG_MIME, resourceId);  // primary
- *   e.dataTransfer.setData('text/plain', resourceId);        // fallback
- *
- * The typed MIME is preferred; `text/plain` is the fallback so the drop still
- * works for a source that only set plain text. Values are trimmed and an empty
- * MIME value falls through to the fallback (so a source that registers the MIME
- * but writes a blank value does not cause a silent no-op move).
- */
 function readDroppedResourceId(e: DragEvent): string | null {
   const typed = e.dataTransfer.getData(RESOURCE_DRAG_MIME).trim();
   if (typed) return typed;
@@ -160,20 +123,17 @@ export default function FolderTree({
   const toast = useToast();
   const activeId = selectedFolderId !== undefined ? selectedFolderId : (selectedId ?? null);
 
-  // Data ---------------------------------------------------------------------
   const [folders, setFolders] = useState<Folder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // UI state -----------------------------------------------------------------
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null | 'root'>(null);
 
-  // Modal / dialog state -----------------------------------------------------
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
-  const [createParent, setCreateParent] = useState<string>(''); // '' = root
+  const [createParent, setCreateParent] = useState<string>('');
   const [createBusy, setCreateBusy] = useState(false);
 
   const [renameTarget, setRenameTarget] = useState<Folder | null>(null);
@@ -181,7 +141,7 @@ export default function FolderTree({
   const [renameBusy, setRenameBusy] = useState(false);
 
   const [moveTarget, setMoveTarget] = useState<Folder | null>(null);
-  const [moveParent, setMoveParent] = useState<string>(''); // '' = root
+  const [moveParent, setMoveParent] = useState<string>('');
   const [moveBusy, setMoveBusy] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<Folder | null>(null);
@@ -190,7 +150,6 @@ export default function FolderTree({
 
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Fetch --------------------------------------------------------------------
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -198,7 +157,7 @@ export default function FolderTree({
       const list = await listFolders({ permissions: false });
       setFolders(list);
     } catch (err) {
-      setError(errMessage(err, 'Failed to load folders.'));
+      setError(errMessage(err, '加载文件夹失败。'));
     } finally {
       setLoading(false);
     }
@@ -208,7 +167,6 @@ export default function FolderTree({
     void load();
   }, [load]);
 
-  // Close the row menu on any outside click.
   useEffect(() => {
     if (!menuFor) return;
     const onDocClick = (e: MouseEvent) => {
@@ -220,10 +178,8 @@ export default function FolderTree({
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [menuFor]);
 
-  // Derived ------------------------------------------------------------------
   const tree = useMemo<FolderNode[]>(() => buildFolderTree(folders), [folders]);
 
-  /** Map of parentId -> direct children (parentId === null for roots). */
   const byParent = useMemo(() => {
     const map = new Map<string | null, Folder[]>();
     for (const f of folders) {
@@ -237,13 +193,12 @@ export default function FolderTree({
 
   const folderName = useCallback(
     (id: string | null | undefined): string => {
-      if (!id) return 'All passwords (root)';
-      return folders.find((f) => f.id === id)?.name ?? '(unknown folder)';
+      if (!id) return '全部凭据（根）';
+      return folders.find((f) => f.id === id)?.name ?? '（未知文件夹）';
     },
     [folders],
   );
 
-  // Actions ------------------------------------------------------------------
   const toggleExpand = useCallback((id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -260,21 +215,15 @@ export default function FolderTree({
       if (!name) return;
       setCreateBusy(true);
       try {
-        await createFolder({
-          name,
-          folder_parent_id: createParent || null,
-        });
-        toast.success(`Folder "${name}" created.`);
+        await createFolder({ name, folder_parent_id: createParent || null });
+        toast.success(`已创建文件夹「${name}」。`);
         setCreateOpen(false);
         setCreateName('');
         setCreateParent('');
-        // Reveal the parent so the new folder is visible.
-        if (createParent) {
-          setExpanded((prev) => new Set(prev).add(createParent));
-        }
+        if (createParent) setExpanded((prev) => new Set(prev).add(createParent));
         await load();
       } catch (err) {
-        toast.error(errMessage(err, 'Failed to create folder.'));
+        toast.error(errMessage(err, '创建文件夹失败。'));
       } finally {
         setCreateBusy(false);
       }
@@ -294,11 +243,11 @@ export default function FolderTree({
       setRenameBusy(true);
       try {
         await renameFolder(renameTarget.id, name);
-        toast.success('Folder renamed.');
+        toast.success('文件夹已重命名。');
         setRenameTarget(null);
         await load();
       } catch (err) {
-        toast.error(errMessage(err, 'Failed to rename folder.'));
+        toast.error(errMessage(err, '重命名文件夹失败。'));
       } finally {
         setRenameBusy(false);
       }
@@ -318,12 +267,12 @@ export default function FolderTree({
       setMoveBusy(true);
       try {
         await moveFolder(moveTarget.id, newParent);
-        toast.success(`Moved "${moveTarget.name}" to ${folderName(newParent)}.`);
+        toast.success(`已将「${moveTarget.name}」移动到 ${folderName(newParent)}。`);
         setMoveTarget(null);
         if (newParent) setExpanded((prev) => new Set(prev).add(newParent));
         await load();
       } catch (err) {
-        toast.error(errMessage(err, 'Failed to move folder.'));
+        toast.error(errMessage(err, '移动文件夹失败。'));
       } finally {
         setMoveBusy(false);
       }
@@ -337,23 +286,19 @@ export default function FolderTree({
     try {
       await deleteFolder(deleteTarget.id, deleteCascade);
       toast.success(
-        deleteCascade
-          ? `Deleted "${deleteTarget.name}" and its contents.`
-          : `Deleted "${deleteTarget.name}".`,
+        deleteCascade ? `已删除「${deleteTarget.name}」及其内容。` : `已删除「${deleteTarget.name}」。`,
       );
-      // If the deleted folder was selected, fall back to All passwords.
       if (activeId === deleteTarget.id) onSelect(null);
       setDeleteTarget(null);
       setDeleteCascade(false);
       await load();
     } catch (err) {
-      toast.error(errMessage(err, 'Failed to delete folder.'));
+      toast.error(errMessage(err, '删除文件夹失败。'));
     } finally {
       setDeleteBusy(false);
     }
   }, [deleteTarget, deleteCascade, activeId, onSelect, load, toast]);
 
-  /** Drop a dragged resource onto a folder (or the root "All passwords" node). */
   const handleResourceDrop = useCallback(
     async (e: DragEvent, destinationFolderId: string | null) => {
       e.preventDefault();
@@ -362,22 +307,17 @@ export default function FolderTree({
       if (!resourceId) return;
       try {
         await moveResource(resourceId, destinationFolderId);
-        toast.success(`Moved password to ${folderName(destinationFolderId)}.`);
-        // Refetch so child-count / membership stays correct for the tree.
+        toast.success(`已将凭据移动到 ${folderName(destinationFolderId)}。`);
         await load();
-        // Notify the parent only AFTER the move has persisted, so its refresh
-        // runs against post-move server state (avoids the dragend race where
-        // the move PUT is still pending).
         onResourceMoved?.();
       } catch (err) {
-        toast.error(errMessage(err, 'Failed to move password.'));
+        toast.error(errMessage(err, '移动凭据失败。'));
       }
     },
     [folderName, load, onResourceMoved, toast],
   );
 
   const onRowDragOver = useCallback((e: DragEvent) => {
-    // Only treat as a drop target when a resource is being dragged.
     if (
       e.dataTransfer.types.includes(RESOURCE_DRAG_MIME) ||
       e.dataTransfer.types.includes('text/plain')
@@ -387,7 +327,7 @@ export default function FolderTree({
     }
   }, []);
 
-  // Recursive render ---------------------------------------------------------
+  // Recursive folder row render -----------------------------------------------
   const renderNode = useCallback(
     (node: FolderNode, depth: number) => {
       const hasChildren = node.children.length > 0;
@@ -399,10 +339,13 @@ export default function FolderTree({
       return (
         <div key={node.id}>
           <div
-            className="folder-tree-row"
+            className={`frow${isActive ? ' active' : ''}${hasChildren && isOpen ? ' open' : ''}${
+              isDropTarget ? ' drop' : ''
+            }`}
             role="treeitem"
             aria-selected={isActive}
             aria-expanded={hasChildren ? isOpen : undefined}
+            style={{ position: 'relative', paddingLeft: 9 + depth * 18 }}
             onClick={() => onSelect(node.id)}
             onDragOver={onRowDragOver}
             onDragEnter={() => setDropTargetId(node.id)}
@@ -412,166 +355,74 @@ export default function FolderTree({
               }
             }}
             onDrop={(e) => void handleResourceDrop(e, node.id)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '7px 8px',
-              paddingLeft: 8 + depth * 16,
-              borderRadius: 'var(--radius-sm)',
-              cursor: 'pointer',
-              fontSize: 14,
-              color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-              background: isDropTarget
-                ? 'rgba(0, 112, 243, 0.18)'
-                : isActive
-                  ? 'rgba(255, 255, 255, 0.05)'
-                  : 'transparent',
-              borderLeft: isActive
-                ? '2px solid var(--primary-color)'
-                : '2px solid transparent',
-              position: 'relative',
-              transition: 'background var(--transition-fast)',
-            }}
           >
-            {/* Expand / collapse chevron (or spacer to keep alignment). */}
             {hasChildren ? (
               <button
                 type="button"
-                aria-label={isOpen ? 'Collapse' : 'Expand'}
+                className="twirl"
+                aria-label={isOpen ? '收起' : '展开'}
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleExpand(node.id);
                 }}
-                style={{
-                  display: 'inline-flex',
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: 0,
-                  width: 16,
-                  flexShrink: 0,
-                }}
               >
-                {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <ChevronRight />
               </button>
             ) : (
-              <span style={{ width: 16, flexShrink: 0 }} />
+              <span style={{ width: 12, flex: '0 0 12px' }} />
             )}
-
-            <FolderIcon
-              size={15}
-              style={{ flexShrink: 0, opacity: 0.9 }}
-              color={isActive ? 'var(--primary-hover)' : 'currentColor'}
-            />
-
-            <span
-              style={{
-                flex: 1,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-              title={node.name}
-            >
-              {node.name}
-            </span>
-
-            {/* Shared indicator (personal === false => visible to others). */}
-            {node.personal === false && (
-              <Users
-                size={13}
-                color="var(--text-muted)"
-                aria-label="Shared folder"
-                style={{ flexShrink: 0 }}
-              />
-            )}
-
-            {/* Hover "..." menu trigger. */}
+            <FolderIcon />
+            <span className="fname">{node.name}</span>
+            {node.personal === false && <Users style={{ width: 13, height: 13 }} aria-label="共享文件夹" />}
             <button
               type="button"
-              className="folder-tree-menu-btn"
-              aria-label="Folder actions"
+              className="fmenu"
+              aria-label="文件夹操作"
               onClick={(e) => {
                 e.stopPropagation();
                 setMenuFor((cur) => (cur === node.id ? null : node.id));
               }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                padding: 2,
-                borderRadius: 4,
-                opacity: menuOpen ? 1 : undefined,
-                flexShrink: 0,
-              }}
             >
-              <MoreHorizontal size={16} />
+              <MoreHorizontal />
             </button>
 
-            {/* Context menu. */}
             {menuOpen && (
-              <div
-                role="menu"
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  right: 4,
-                  zIndex: 20,
-                  minWidth: 150,
-                  marginTop: 2,
-                  padding: 4,
-                  background: 'var(--panel-bg)',
-                  backdropFilter: 'blur(16px)',
-                  WebkitBackdropFilter: 'blur(16px)',
-                  border: '1px solid var(--panel-border)',
-                  borderRadius: 'var(--radius-sm)',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.45)',
-                }}
-              >
-                <MenuItem
-                  icon={<Pencil size={14} />}
-                  label="Rename"
+              <div className="menu" role="menu" style={{ top: '100%', right: 4 }} onClick={(e) => e.stopPropagation()}>
+                <button
                   onClick={() => {
                     setMenuFor(null);
                     setRenameTarget(node);
                     setRenameName(node.name);
                   }}
-                />
-                <MenuItem
-                  icon={<MoveIcon size={14} />}
-                  label="Move..."
+                >
+                  <Pencil /> 重命名
+                </button>
+                <button
                   onClick={() => {
                     setMenuFor(null);
                     setMoveTarget(node);
                     setMoveParent(node.folder_parent_id ?? '');
                   }}
-                />
-                <MenuItem
-                  icon={<Trash2 size={14} />}
-                  label="Delete"
-                  danger
+                >
+                  <MoveIcon /> 移动…
+                </button>
+                <div className="sep" />
+                <button
+                  className="danger"
                   onClick={() => {
                     setMenuFor(null);
                     setDeleteTarget(node);
                     setDeleteCascade(false);
                   }}
-                />
+                >
+                  <Trash2 /> 删除
+                </button>
               </div>
             )}
           </div>
 
-          {/* Children. */}
           {hasChildren && isOpen && (
-            <div role="group">
-              {node.children.map((child) => renderNode(child, depth + 1))}
-            </div>
+            <div role="group">{node.children.map((child) => renderNode(child, depth + 1))}</div>
           )}
         </div>
       );
@@ -589,18 +440,12 @@ export default function FolderTree({
     ],
   );
 
-  // -------------------------------------------------------------------------
-  // Parent <select> options for the create / move pickers (excludes a folder's
-  // own subtree when moving, to prevent cycles).
-  // -------------------------------------------------------------------------
   const renderParentOptions = useCallback(
     (excludeSubtreeOf?: string) => {
       const opts: { id: string; label: string }[] = [];
       const walk = (nodes: FolderNode[], depth: number) => {
         for (const n of nodes) {
-          if (excludeSubtreeOf && isSelfOrDescendant(excludeSubtreeOf, n.id, byParent)) {
-            continue;
-          }
+          if (excludeSubtreeOf && isSelfOrDescendant(excludeSubtreeOf, n.id, byParent)) continue;
           opts.push({ id: n.id, label: `${'— '.repeat(depth)}${n.name}` });
           walk(n.children, depth + 1);
         }
@@ -611,172 +456,109 @@ export default function FolderTree({
     [tree, byParent],
   );
 
-  // -------------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------------
   return (
-    <div
-      ref={containerRef}
-      className="glass-panel animate-fade-in"
-      style={{
-        width: 240,
-        minWidth: 240,
-        alignSelf: 'flex-start',
-        padding: 12,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 2,
-      }}
-    >
-      {/* All passwords (root) — also a drop target moving resources to root. */}
-      <NavRow
-        active={activeId === null && !favoritesOnly}
-        dropActive={dropTargetId === 'root'}
-        icon={<FolderIcon size={15} />}
-        label="All passwords"
-        onClick={() => {
-          onToggleFavorites?.(false);
-          onSelect(null);
-        }}
-        onDragOver={onRowDragOver}
-        onDragEnter={() => setDropTargetId('root')}
-        onDragLeave={() => setDropTargetId((cur) => (cur === 'root' ? null : cur))}
-        onDrop={(e) => void handleResourceDrop(e, null)}
-      />
+    <div className="folders" ref={containerRef}>
+      <div className="folders-scroll">
+        <div className="fsec-label">快速访问</div>
 
-      {/* Favorites — virtual node toggling the parent's favorites filter. */}
-      {onToggleFavorites && (
-        <NavRow
-          active={favoritesOnly}
-          icon={
-            <Star
-              size={15}
-              fill={favoritesOnly ? 'var(--primary-hover)' : 'none'}
-              color={favoritesOnly ? 'var(--primary-hover)' : 'currentColor'}
-            />
-          }
-          label="Favorites"
-          onClick={() => onToggleFavorites(!favoritesOnly)}
-        />
-      )}
+        {/* 全部凭据 (root) — also a drop target moving resources to root. */}
+        <div
+          className={`frow${activeId === null && !favoritesOnly ? ' active' : ''}${
+            dropTargetId === 'root' ? ' drop' : ''
+          }`}
+          role="treeitem"
+          onClick={() => {
+            onToggleFavorites?.(false);
+            onSelect(null);
+          }}
+          onDragOver={onRowDragOver}
+          onDragEnter={() => setDropTargetId('root')}
+          onDragLeave={() => setDropTargetId((cur) => (cur === 'root' ? null : cur))}
+          onDrop={(e) => void handleResourceDrop(e, null)}
+        >
+          <span style={{ width: 12, flex: '0 0 12px' }} />
+          <VaultIcon />
+          <span className="fname">全部凭据</span>
+        </div>
 
-      <div
-        style={{
-          height: 1,
-          background: 'var(--panel-border)',
-          margin: '8px 4px',
-        }}
-      />
-
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 600,
-          letterSpacing: 0.5,
-          textTransform: 'uppercase',
-          color: 'var(--text-muted)',
-          padding: '2px 8px 6px',
-        }}
-      >
-        Folders
-      </div>
-
-      {/* Folder hierarchy / states. */}
-      <div role="tree" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {loading ? (
+        {/* 收藏 — virtual node toggling the favorites filter. */}
+        {onToggleFavorites && (
           <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 8px',
-              color: 'var(--text-muted)',
-              fontSize: 13,
-            }}
+            className={`frow${favoritesOnly ? ' active' : ''}`}
+            role="treeitem"
+            onClick={() => onToggleFavorites(!favoritesOnly)}
           >
-            <Spinner size={16} />
-            <span>Loading folders...</span>
+            <span style={{ width: 12, flex: '0 0 12px' }} />
+            <Star style={favoritesOnly ? { fill: 'currentColor' } : undefined} />
+            <span className="fname">收藏</span>
+          </div>
+        )}
+
+        <div className="fsec-label">文件夹</div>
+
+        {loading ? (
+          <div className="frow" style={{ color: 'var(--text-3)', cursor: 'default' }}>
+            <span className="spin-ring" />
+            <span className="fname">加载文件夹…</span>
           </div>
         ) : error ? (
-          <div
-            style={{
-              background: 'rgba(248, 81, 73, 0.1)',
-              color: 'var(--danger-color)',
-              border: '1px solid var(--danger-color)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '8px 10px',
-              fontSize: 12.5,
-              lineHeight: 1.45,
-            }}
-          >
-            <div style={{ marginBottom: 6 }}>{error}</div>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ padding: '4px 10px', fontSize: 12 }}
-              onClick={() => void load()}
-            >
-              Retry
-            </button>
+          <div style={{ padding: '8px 9px' }}>
+            <div className="warnbox" style={{ fontSize: 12, padding: '10px 11px' }}>
+              <div>
+                {error}
+                <button
+                  className="btn sm"
+                  style={{ marginTop: 8 }}
+                  onClick={() => void load()}
+                  type="button"
+                >
+                  重试
+                </button>
+              </div>
+            </div>
           </div>
         ) : tree.length === 0 ? (
-          <div
-            style={{
-              padding: '10px 8px',
-              color: 'var(--text-muted)',
-              fontSize: 13,
-              fontStyle: 'italic',
-            }}
-          >
-            No folders yet
+          <div className="frow" style={{ color: 'var(--text-3)', cursor: 'default', fontStyle: 'italic' }}>
+            <span style={{ width: 12, flex: '0 0 12px' }} />
+            <span className="fname">还没有文件夹</span>
           </div>
         ) : (
-          tree.map((node) => renderNode(node, 0))
+          <div role="tree">{tree.map((node) => renderNode(node, 0))}</div>
         )}
-      </div>
 
-      {/* + New Folder. */}
-      <button
-        type="button"
-        className="btn btn-secondary"
-        onClick={() => {
-          setCreateParent(activeId ?? '');
-          setCreateName('');
-          setCreateOpen(true);
-        }}
-        style={{
-          marginTop: 12,
-          width: '100%',
-          justifyContent: 'flex-start',
-          padding: '8px 12px',
-          fontSize: 13,
-        }}
-      >
-        <FolderPlus size={15} />
-        New Folder
-      </button>
+        <button
+          type="button"
+          className="frow"
+          style={{ marginTop: 8, color: 'var(--accent-text)' }}
+          onClick={() => {
+            setCreateParent(activeId ?? '');
+            setCreateName('');
+            setCreateOpen(true);
+          }}
+        >
+          <span style={{ width: 12, flex: '0 0 12px' }} />
+          <Plus style={{ color: 'var(--accent)' }} />
+          <span className="fname">新建文件夹</span>
+        </button>
+      </div>
 
       {/* ---- Create modal ---- */}
       <Modal
         open={createOpen}
-        title="New folder"
+        title="新建文件夹"
         onClose={() => !createBusy && setCreateOpen(false)}
         maxWidth={420}
         footer={
           <>
-            <button
-              className="btn btn-secondary"
-              onClick={() => setCreateOpen(false)}
-              disabled={createBusy}
-            >
-              Cancel
+            <button className="btn btn-secondary" onClick={() => setCreateOpen(false)} disabled={createBusy}>
+              取消
             </button>
             <button
               className="btn btn-primary"
               onClick={(e) => void handleCreate(e)}
               disabled={createBusy || createName.trim().length === 0}
             >
-              {createBusy ? 'Creating...' : 'Create'}
+              {createBusy ? '创建中…' : '创建'}
             </button>
           </>
         }
@@ -784,7 +566,7 @@ export default function FolderTree({
         <form onSubmit={handleCreate}>
           <div className="form-group">
             <label className="form-label" htmlFor="ft-create-name">
-              Folder name
+              文件夹名称
             </label>
             <input
               id="ft-create-name"
@@ -793,12 +575,12 @@ export default function FolderTree({
               value={createName}
               onChange={(e) => setCreateName(e.target.value)}
               disabled={createBusy}
-              placeholder="e.g. Work"
+              placeholder="例如：工作"
             />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label" htmlFor="ft-create-parent">
-              Parent folder
+              上级文件夹
             </label>
             <select
               id="ft-create-parent"
@@ -807,7 +589,7 @@ export default function FolderTree({
               onChange={(e) => setCreateParent(e.target.value)}
               disabled={createBusy}
             >
-              <option value="">All passwords (root)</option>
+              <option value="">全部凭据（根）</option>
               {renderParentOptions().map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.label}
@@ -815,7 +597,6 @@ export default function FolderTree({
               ))}
             </select>
           </div>
-          {/* Allow Enter-to-submit without a visible button inside the form. */}
           <button type="submit" style={{ display: 'none' }} aria-hidden tabIndex={-1} />
         </form>
       </Modal>
@@ -823,24 +604,20 @@ export default function FolderTree({
       {/* ---- Rename modal ---- */}
       <Modal
         open={renameTarget !== null}
-        title="Rename folder"
+        title="重命名文件夹"
         onClose={() => !renameBusy && setRenameTarget(null)}
         maxWidth={420}
         footer={
           <>
-            <button
-              className="btn btn-secondary"
-              onClick={() => setRenameTarget(null)}
-              disabled={renameBusy}
-            >
-              Cancel
+            <button className="btn btn-secondary" onClick={() => setRenameTarget(null)} disabled={renameBusy}>
+              取消
             </button>
             <button
               className="btn btn-primary"
               onClick={(e) => void handleRename(e)}
               disabled={renameBusy || renameName.trim().length === 0}
             >
-              {renameBusy ? 'Saving...' : 'Save'}
+              {renameBusy ? '保存中…' : '保存'}
             </button>
           </>
         }
@@ -848,7 +625,7 @@ export default function FolderTree({
         <form onSubmit={handleRename}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label" htmlFor="ft-rename-name">
-              Folder name
+              文件夹名称
             </label>
             <input
               id="ft-rename-name"
@@ -866,24 +643,16 @@ export default function FolderTree({
       {/* ---- Move modal ---- */}
       <Modal
         open={moveTarget !== null}
-        title={moveTarget ? `Move "${moveTarget.name}"` : 'Move folder'}
+        title={moveTarget ? `移动「${moveTarget.name}」` : '移动文件夹'}
         onClose={() => !moveBusy && setMoveTarget(null)}
         maxWidth={420}
         footer={
           <>
-            <button
-              className="btn btn-secondary"
-              onClick={() => setMoveTarget(null)}
-              disabled={moveBusy}
-            >
-              Cancel
+            <button className="btn btn-secondary" onClick={() => setMoveTarget(null)} disabled={moveBusy}>
+              取消
             </button>
-            <button
-              className="btn btn-primary"
-              onClick={(e) => void handleMove(e)}
-              disabled={moveBusy}
-            >
-              {moveBusy ? 'Moving...' : 'Move'}
+            <button className="btn btn-primary" onClick={(e) => void handleMove(e)} disabled={moveBusy}>
+              {moveBusy ? '移动中…' : '移动'}
             </button>
           </>
         }
@@ -891,7 +660,7 @@ export default function FolderTree({
         <form onSubmit={handleMove}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label" htmlFor="ft-move-parent">
-              Destination
+              目标位置
             </label>
             <select
               id="ft-move-parent"
@@ -900,7 +669,7 @@ export default function FolderTree({
               onChange={(e) => setMoveParent(e.target.value)}
               disabled={moveBusy}
             >
-              <option value="">All passwords (root)</option>
+              <option value="">全部凭据（根）</option>
               {renderParentOptions(moveTarget?.id).map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.label}
@@ -915,29 +684,19 @@ export default function FolderTree({
       {/* ---- Delete confirm ---- */}
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="Delete folder"
+        title="删除文件夹"
         danger
         loading={deleteBusy}
-        confirmLabel="Delete"
+        confirmLabel="删除"
+        cancelLabel="取消"
         message={
           <>
-            Delete the folder{' '}
-            <strong style={{ color: 'var(--text-primary)' }}>
-              {deleteTarget?.name}
-            </strong>
-            ? This cannot be undone.
+            删除文件夹 <strong style={{ color: 'var(--text)' }}>{deleteTarget?.name}</strong>？此操作不可撤销。
           </>
         }
         extra={
           <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: 13,
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-2)', cursor: 'pointer' }}
           >
             <input
               type="checkbox"
@@ -945,8 +704,7 @@ export default function FolderTree({
               onChange={(e) => setDeleteCascade(e.target.checked)}
               disabled={deleteBusy}
             />
-            Also delete its contents (passwords and sub-folders). When off,
-            writable contents are moved to the root.
+            同时删除其内容（凭据与子文件夹）。关闭时，可写内容会被移动到根目录。
           </label>
         }
         onConfirm={() => void handleDelete()}
@@ -956,112 +714,5 @@ export default function FolderTree({
         }}
       />
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Small presentational helpers (local to this file).
-// ---------------------------------------------------------------------------
-function NavRow({
-  active,
-  dropActive,
-  icon,
-  label,
-  onClick,
-  onDragOver,
-  onDragEnter,
-  onDragLeave,
-  onDrop,
-}: {
-  active: boolean;
-  dropActive?: boolean;
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-  onDragOver?: (e: DragEvent) => void;
-  onDragEnter?: () => void;
-  onDragLeave?: () => void;
-  onDrop?: (e: DragEvent) => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      onDragOver={onDragOver}
-      onDragEnter={onDragEnter}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '8px 10px',
-        width: '100%',
-        textAlign: 'left',
-        border: 'none',
-        borderLeft: active ? '2px solid var(--primary-color)' : '2px solid transparent',
-        borderRadius: 'var(--radius-sm)',
-        cursor: 'pointer',
-        fontSize: 14,
-        fontWeight: 500,
-        color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-        background: dropActive
-          ? 'rgba(0, 112, 243, 0.18)'
-          : active
-            ? 'rgba(255, 255, 255, 0.05)'
-            : 'transparent',
-        transition: 'background var(--transition-fast)',
-      }}
-    >
-      <span style={{ display: 'inline-flex', color: active ? 'var(--primary-hover)' : 'inherit' }}>
-        {icon}
-      </span>
-      {label}
-    </button>
-  );
-}
-
-function MenuItem({
-  icon,
-  label,
-  danger,
-  onClick,
-}: {
-  icon: ReactNode;
-  label: string;
-  danger?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        width: '100%',
-        padding: '7px 10px',
-        background: 'transparent',
-        border: 'none',
-        borderRadius: 4,
-        cursor: 'pointer',
-        fontSize: 13,
-        textAlign: 'left',
-        color: danger ? 'var(--danger-color)' : 'var(--text-primary)',
-      }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLElement).style.background = danger
-          ? 'rgba(248, 81, 73, 0.12)'
-          : 'rgba(255, 255, 255, 0.06)';
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLElement).style.background = 'transparent';
-      }}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }

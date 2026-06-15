@@ -35,6 +35,7 @@ import {
 } from 'react';
 import * as openpgp from 'openpgp';
 import type { PrivateKey } from 'openpgp';
+import { Lock, KeyRound, Eye, EyeOff, ShieldCheck, Unlock, AlertTriangle } from 'lucide-react';
 import { encryptMessage } from '../gpg';
 
 // ---------------------------------------------------------------------------
@@ -308,6 +309,7 @@ export function useKey(): KeyContextValue {
 export function LockGate({ children }: { children: ReactNode }): JSX.Element | null {
     const { isLocked, hasStoredKey, unlock } = useKey();
     const [passphrase, setPassphrase] = useState('');
+    const [show, setShow] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 
@@ -334,89 +336,115 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
         return null;
     }
 
+    // Identity shown on the lock card (display only — the private key stays locked
+    // in localStorage until the passphrase decrypts it into memory).
+    const account = (() => {
+        try {
+            const raw = localStorage.getItem(LS_USER);
+            const u = raw
+                ? (JSON.parse(raw) as {
+                      username?: string;
+                      profile?: { first_name?: string; last_name?: string };
+                  })
+                : null;
+            const f = u?.profile?.first_name?.trim() ?? '';
+            const l = u?.profile?.last_name?.trim() ?? '';
+            const name = [f, l].filter(Boolean).join(' ') || u?.username || '账户';
+            const username = u?.username ?? '';
+            let initials = `${f.charAt(0)}${l.charAt(0)}`.toUpperCase();
+            if (!initials.trim()) initials = (username || 'U').slice(0, 2).toUpperCase();
+            let h = 0;
+            const seed = username || name;
+            for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+            return { name, username, initials, color: `oklch(0.55 0.15 ${h % 360})` };
+        } catch {
+            return { name: '账户', username: '', initials: 'U', color: 'var(--accent)' };
+        }
+    })();
+
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
+        if (busy) return;
         setError(null);
         setBusy(true);
         try {
             await unlock(passphrase);
             setPassphrase('');
         } catch (err: unknown) {
-            setError(errMessage(err, 'Failed to unlock.'));
+            setError(errMessage(err, 'passphrase 不正确，无法解锁。'));
         } finally {
             setBusy(false);
         }
     };
 
     return (
-        <div
-            style={{
-                position: 'fixed',
-                inset: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'rgba(0, 0, 0, 0.6)',
-                backdropFilter: 'blur(6px)',
-                zIndex: 1000,
-            }}
-        >
-            <form
-                onSubmit={handleSubmit}
-                className="glass-panel animate-fade-in"
-                style={{
-                    width: '100%',
-                    maxWidth: '380px',
-                    padding: '2rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '1rem',
-                }}
-            >
-                <h2 style={{ margin: 0 }}>Unlock your vault</h2>
-                <p style={{ margin: 0, opacity: 0.7, fontSize: '0.9rem' }}>
-                    Enter your passphrase to decrypt your private key. It stays in memory only.
-                </p>
+        <div className="lock-overlay">
+            <div className="lock-card">
+                <div className="lock-badge">{busy ? <KeyRound size={28} /> : <Lock size={28} />}</div>
+                <h2>{busy ? '正在解锁密钥…' : '保险库已锁定'}</h2>
+                <div className="who">输入 passphrase 在本地解密你的私钥</div>
 
-                {error && (
-                    <div
-                        style={{
-                            background: 'rgba(248, 81, 73, 0.1)',
-                            color: 'var(--danger-color)',
-                            border: '1px solid var(--danger-color)',
-                            borderRadius: '8px',
-                            padding: '0.6rem 0.8rem',
-                            fontSize: '0.85rem',
-                        }}
-                    >
-                        {error}
+                <div className="lock-id">
+                    <span className="av" style={{ background: account.color }}>
+                        {account.initials}
+                    </span>
+                    <div className="who2">
+                        <div className="n">{account.name}</div>
+                        {account.username && <div className="fp">{account.username}</div>}
                     </div>
-                )}
-
-                <div className="form-group">
-                    <label className="form-label" htmlFor="lockgate-passphrase">
-                        Passphrase
-                    </label>
-                    <input
-                        id="lockgate-passphrase"
-                        className="form-control"
-                        type="password"
-                        autoFocus
-                        autoComplete="current-password"
-                        value={passphrase}
-                        onChange={(e) => setPassphrase(e.target.value)}
-                        disabled={busy}
-                    />
                 </div>
 
-                <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={busy || passphrase.length === 0}
-                >
-                    {busy ? 'Unlocking…' : 'Unlock'}
-                </button>
-            </form>
+                {busy ? (
+                    <div style={{ padding: '8px 0 4px' }}>
+                        <div className="decrypt-bar" style={{ height: 4 }}>
+                            <i style={{ width: '100%', animation: 'decrypt 1s ease forwards' }} />
+                        </div>
+                        <div className="lock-foot" style={{ marginTop: 14 }}>
+                            <span className="spin-ring" /> 用 passphrase 解密本地私钥…
+                        </div>
+                    </div>
+                ) : (
+                    <form onSubmit={handleSubmit}>
+                        <div className="pf-label">
+                            <KeyRound size={15} /> 输入 passphrase 解锁
+                        </div>
+                        <div className={`pf-input${error ? ' err' : ''}`}>
+                            <Lock size={17} />
+                            <input
+                                id="lockgate-passphrase"
+                                type={show ? 'text' : 'password'}
+                                autoFocus
+                                autoComplete="current-password"
+                                placeholder="••••••••••••"
+                                value={passphrase}
+                                onChange={(e) => {
+                                    setPassphrase(e.target.value);
+                                    setError(null);
+                                }}
+                            />
+                            <button type="button" className="pf-eye" onClick={() => setShow((s) => !s)}>
+                                {show ? <EyeOff size={17} /> : <Eye size={17} />}
+                            </button>
+                        </div>
+                        {error && (
+                            <div className="pf-err">
+                                <AlertTriangle size={13} /> {error}
+                            </div>
+                        )}
+                        <button
+                            type="submit"
+                            className="btn primary"
+                            style={{ width: '100%', height: 44, marginTop: 16, fontSize: 14 }}
+                            disabled={passphrase.length === 0}
+                        >
+                            <Unlock size={16} /> 解锁
+                        </button>
+                        <div className="lock-foot">
+                            <ShieldCheck size={13} /> passphrase 仅用于本地解密，永不上传
+                        </div>
+                    </form>
+                )}
+            </div>
         </div>
     );
 }

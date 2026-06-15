@@ -25,8 +25,8 @@ export function ConfirmDialog({
     open,
     title,
     message,
-    confirmLabel = 'Confirm',
-    cancelLabel = 'Cancel',
+    confirmLabel = '确认',
+    cancelLabel = '取消',
     danger = false,
     loading = false,
     extra,
@@ -54,7 +54,7 @@ export function ConfirmDialog({
                                 : undefined
                         }
                     >
-                        {loading ? 'Working...' : confirmLabel}
+                        {loading ? '处理中…' : confirmLabel}
                     </button>
                 </>
             }

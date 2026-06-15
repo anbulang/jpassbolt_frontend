@@ -397,6 +397,29 @@ export interface GroupDeleteTransfer {
 }
 
 // ---------------------------------------------------------------------------
+// Account setup / recovery
+// ---------------------------------------------------------------------------
+
+/**
+ * The pending user returned by GET /setup/start/{userId}/{tokenId}.json (and the
+ * recover-start equivalent). It is rendered in the userIndexAndView shape, but
+ * `gpgkey` is always null (a pending user has not uploaded a key yet). Reuses the
+ * base `User` type — no new wire shape is needed.
+ */
+export type SetupStartUser = User;
+
+/**
+ * Request body for POST|PUT /setup/complete/{userId}.json (and the recover-complete
+ * equivalent). Mirrors the backend SetupDto.CompleteRequest verbatim (snake_case):
+ * the register token + the user's ASCII-armored OpenPGP PUBLIC key. The private key
+ * and passphrase are NEVER part of this payload — only the public key is uploaded.
+ */
+export interface SetupCompleteRequest {
+  authentication_token: { token: string };
+  gpgkey: { armored_key: string };
+}
+
+// ---------------------------------------------------------------------------
 // Share
 // ---------------------------------------------------------------------------
 

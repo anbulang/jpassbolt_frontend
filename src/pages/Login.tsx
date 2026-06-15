@@ -2,13 +2,20 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loginWithGpg } from '../auth';
 import { useKey } from '../crypto/KeyContext';
-import { Shield, Key } from 'lucide-react';
+import { probeMfaRequired } from '../services/mfa';
+import MfaChallenge from '../components/MfaChallenge';
+import { Vault, KeyRound, Lock, Eye, EyeOff, ShieldCheck, AlertTriangle, LogIn } from 'lucide-react';
+import KeyFileButton from '../components/KeyFileButton';
 
 export default function Login() {
     const [pgpKey, setPgpKey] = useState('');
     const [passphrase, setPassphrase] = useState('');
+    const [show, setShow] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    // When the backend enforces MFA after login, we hold the unlocked session and
+    // render <MfaChallenge> instead of navigating; cleared on success/cancel.
+    const [mfaRequired, setMfaRequired] = useState(false);
     const navigate = useNavigate();
     const { setArmoredKeys, unlock } = useKey();
 
@@ -16,7 +23,7 @@ export default function Login() {
         e.preventDefault();
         const armoredPrivateKey = pgpKey.trim();
         if (!armoredPrivateKey) {
-            setError('Please provide your GPG private key.');
+            setError('请粘贴你的 GPG 私钥。');
             return;
         }
 
@@ -26,6 +33,7 @@ export default function Login() {
         try {
             // 1. 2-stage GPG login: validates the key, gets a JWT, and (in auth.ts) persists
             //    the passphrase-protected armored private key + own armored public key.
+            //    UNCHANGED — the auth/loginWithGpg contract is not touched by the MFA branch.
             await loginWithGpg(armoredPrivateKey, passphrase);
 
             // 2. Persist the armored keys into KeyContext's localStorage contract (idempotent
@@ -35,78 +43,129 @@ export default function Login() {
             setArmoredKeys(armoredPrivateKey);
             await unlock(passphrase);
 
-            // 3. Enter the vault.
+            // 3. Post-login MFA gate (additive, non-blocking on the happy path): probe whether
+            //    the backend requires a second factor for this session. If it does, render the
+            //    TOTP challenge instead of navigating; otherwise enter the vault as before.
+            const required = await probeMfaRequired();
+            if (required) {
+                setMfaRequired(true);
+                return; // <MfaChallenge> takes over; onVerified() navigates to '/'.
+            }
+
+            // 4. Enter the vault (no MFA, or probe inconclusive — happy path unchanged).
             navigate('/');
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : '';
-            setError(message || 'Login failed. Please check your credentials.');
+            setError(message || '登录失败，请检查你的私钥与 passphrase。');
         } finally {
             setLoading(false);
         }
     };
 
+    // MFA gate active: the JWT session exists + the key is unlocked, but the backend
+    // requires a TOTP code before the vault is reachable. Render the challenge.
+    if (mfaRequired) {
+        return (
+            <MfaChallenge
+                onVerified={() => navigate('/')}
+                onCancel={() => {
+                    setMfaRequired(false);
+                    setError('已取消两步验证，可重新登录。');
+                }}
+            />
+        );
+    }
+
     return (
-        <div className="container animate-fade-in" style={{ maxWidth: '500px', paddingTop: '8vh' }}>
-            <div className="text-center mb-4">
-                <div style={{ display: 'inline-flex', padding: '16px', background: 'var(--primary-glow)', borderRadius: '50%', marginBottom: '20px' }}>
-                    <Shield size={48} color="var(--primary-color)" />
+        <div className="flow-overlay">
+            <div className="flow-card">
+                <div className="flow-top">
+                    <div className="flow-brand">
+                        <span className="lg">
+                            <Vault />
+                        </span>
+                        <span className="bn">JPassbolt</span>
+                    </div>
                 </div>
-                <h1 style={{ fontWeight: 600, letterSpacing: '-0.5px' }}>JPassbolt</h1>
-                <p style={{ color: 'var(--text-secondary)', marginTop: '8px' }}>
-                    Secure OpenPGP Password Manager
-                </p>
-            </div>
 
-            <div className="glass-panel" style={{ padding: '32px' }}>
-                <form onSubmit={handleLogin}>
-                    {error && (
-                        <div style={{ padding: '12px', background: 'rgba(248, 81, 73, 0.1)', border: '1px solid var(--danger-color)', color: 'var(--danger-color)', borderRadius: '6px', marginBottom: '20px', fontSize: '14px' }}>
-                            {error}
+                <div className="flow-body">
+                    <div className="flow-h">
+                        <div className="flow-badge">
+                            <Lock />
                         </div>
-                    )}
+                        <h2>登录端到端加密保险库</h2>
+                        <p>用你的 OpenPGP 私钥发起零知识质询-响应认证。私钥永不离开此浏览器。</p>
+                    </div>
 
-                    <div className="form-group">
-                        <label className="form-label" htmlFor="pgpkey">
-                            <Key size={14} style={{ display: 'inline', marginRight: '6px', verticalAlign: '-2px' }} />
-                            Your GPG Private Key
-                        </label>
+                    <form onSubmit={handleLogin}>
+                        {error && (
+                            <div className="warnbox" style={{ marginBottom: 16 }}>
+                                <AlertTriangle />
+                                <div>{error}</div>
+                            </div>
+                        )}
+
+                        <div
+                            className="pf-label"
+                            style={{ marginBottom: 7, display: 'flex', alignItems: 'center' }}
+                        >
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <KeyRound size={15} /> 你的 GPG 私钥
+                            </span>
+                            <span style={{ marginLeft: 'auto' }}>
+                                {/* 可选：选择本地 .asc 私钥文件填入下方文本框；仍可直接粘贴。文件仅在浏览器内读取。 */}
+                                <KeyFileButton onLoaded={(t) => setPgpKey(t)} />
+                            </span>
+                        </div>
                         <textarea
-                            id="pgpkey"
-                            className="form-control"
+                            className="flow-textarea"
                             placeholder="-----BEGIN PGP PRIVATE KEY BLOCK-----"
                             value={pgpKey}
                             onChange={(e) => setPgpKey(e.target.value)}
                             required
-                            rows={8}
+                            rows={7}
+                            spellCheck={false}
                         />
-                    </div>
 
-                    <div className="form-group">
-                        <label className="form-label" htmlFor="passphrase">Passphrase (if encrypted)</label>
-                        <input
-                            id="passphrase"
-                            type="password"
-                            className="form-control"
-                            placeholder="Enter your key phrase"
-                            value={passphrase}
-                            onChange={(e) => setPassphrase(e.target.value)}
-                        />
-                    </div>
+                        <div className="pf-label" style={{ margin: '16px 0 7px' }}>
+                            <Lock size={15} /> passphrase（若私钥已加密）
+                        </div>
+                        <div className="pf-input">
+                            <Lock size={17} />
+                            <input
+                                type={show ? 'text' : 'password'}
+                                placeholder="••••••••••••"
+                                value={passphrase}
+                                onChange={(e) => setPassphrase(e.target.value)}
+                            />
+                            <button type="button" className="pf-eye" onClick={() => setShow((s) => !s)}>
+                                {show ? <EyeOff size={17} /> : <Eye size={17} />}
+                            </button>
+                        </div>
 
-                    <button
-                        type="submit"
-                        className="btn btn-primary"
-                        style={{ width: '100%', marginTop: '10px', padding: '12px' }}
-                        disabled={loading}
-                    >
-                        {loading ? 'Authenticating...' : 'Secure Login'}
-                    </button>
-                </form>
+                        <button
+                            type="submit"
+                            className="btn primary"
+                            style={{ width: '100%', height: 44, marginTop: 18, fontSize: 14 }}
+                            disabled={loading}
+                        >
+                            {loading ? (
+                                <>
+                                    <span className="spin-ring" /> 正在认证…
+                                </>
+                            ) : (
+                                <>
+                                    <LogIn size={16} /> 安全登录
+                                </>
+                            )}
+                        </button>
+
+                        <div className="flow-note">
+                            <ShieldCheck size={13} /> 私钥与 passphrase 仅在本地使用，绝不上传服务器
+                        </div>
+                    </form>
+                </div>
             </div>
-
-            <p style={{ textAlign: 'center', marginTop: '24px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                Your private key never leaves the browser. Authentication happens via zero-knowledge challenge-response.
-            </p>
         </div>
     );
 }

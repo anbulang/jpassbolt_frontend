@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Login from './pages/Login';
+import Setup from './pages/Setup';
+import Recovery from './pages/Recovery';
 import Vault from './pages/Vault';
 import Users from './pages/Users';
 import Groups from './pages/Groups';
@@ -43,6 +45,19 @@ function App() {
     <Routes>
       {/* Public */}
       <Route path="/login" element={<Login />} />
+      {/* Account setup (onboarding) — guest-only flow reached via an emailed link.
+          Supports both the query form (/setup?user_id=...&token=...) and the path
+          form (/setup/:userId/:tokenId). Runs OUTSIDE ProtectedShell (no JWT yet). */}
+      <Route path="/setup" element={<Setup />} />
+      <Route path="/setup/:userId/:tokenId" element={<Setup />} />
+      {/* Account recovery — guest-only flow reached via an emailed recover link.
+          Without a token it is request mode (collect email -> requestRecovery);
+          with userId+token it is complete mode (re-import the existing key backup
+          -> completeRecovery enforces fingerprint match). Both forms supported:
+          /recover?user_id=...&token=... and /recover/:userId/:tokenId. Runs
+          OUTSIDE ProtectedShell (no JWT yet). */}
+      <Route path="/recover" element={<Recovery />} />
+      <Route path="/recover/:userId/:tokenId" element={<Recovery />} />
 
       {/* Protected (rendered inside the Layout shell, guarded + unlock-gated) */}
       <Route element={<ProtectedShell />}>

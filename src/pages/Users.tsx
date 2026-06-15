@@ -14,6 +14,7 @@ import {
   Pencil,
   Trash2,
   ShieldAlert,
+  ShieldCheck,
 } from 'lucide-react';
 import type { Role, User, UserCreateRequest, UserUpdateRequest } from '../types';
 import {
@@ -82,17 +83,19 @@ function isForbidden(err: unknown): boolean {
 
 interface UserStatus {
   label: string;
+  /** Aegis statuschip variant: active / disabled / pending. */
+  tone: 'active' | 'disabled' | 'pending';
   variant: BadgeVariant;
 }
 
-/** Derives the status badge from a user's active / disabled flags. */
+/** Derives the status from a user's active / disabled flags. */
 function statusOf(user: User): UserStatus {
-  if (user.disabled) return { label: 'Disabled', variant: 'danger' };
-  if (user.active) return { label: 'Active', variant: 'success' };
-  return { label: 'Pending', variant: 'muted' };
+  if (user.disabled) return { label: '已禁用', tone: 'disabled', variant: 'danger' };
+  if (user.active) return { label: '活跃', tone: 'active', variant: 'success' };
+  return { label: '待激活', tone: 'pending', variant: 'muted' };
 }
 
-/** Maps a role name to a badge variant. */
+/** Maps a role name to a badge variant (used in the profile modal). */
 function roleVariant(roleName?: string): BadgeVariant {
   if (roleName === 'admin') return 'primary';
   return 'default';
@@ -110,18 +113,17 @@ function formatDate(value?: string | null): string {
   });
 }
 
-const DANGER_BANNER: React.CSSProperties = {
-  background: 'rgba(248, 81, 73, 0.1)',
-  border: '1px solid rgba(248, 81, 73, 0.3)',
-  color: 'var(--danger-color)',
-  borderRadius: 'var(--radius-sm)',
-  padding: '12px 16px',
-  fontSize: '14px',
-  marginBottom: '20px',
-  display: 'flex',
-  alignItems: 'center',
-  gap: '10px',
-};
+/** Inline role badge matching the Aegis `.rolebadge` style. */
+function RoleBadge({ roleName }: { roleName?: string }) {
+  if (roleName === 'admin') {
+    return (
+      <span className="rolebadge admin">
+        <ShieldCheck /> 管理员
+      </span>
+    );
+  }
+  return <span className="rolebadge">成员</span>;
+}
 
 // ---------------------------------------------------------------------------
 // Edit / Invite modal form state
@@ -154,6 +156,9 @@ export default function Users() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [activeOnly, setActiveOnly] = useState(false);
+
+  // Client-side segmented filter (presentation only, derived over the fetched list).
+  const [segment, setSegment] = useState<'all' | 'admin' | 'pending' | 'disabled'>('all');
 
   // Modal state.
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -205,7 +210,7 @@ export default function Users() {
       if (reqId === reqIdRef.current) setUsers(data);
     } catch (err) {
       if (reqId === reqIdRef.current) {
-        setLoadError(errorMessage(err, 'Failed to load the user directory.'));
+        setLoadError(errorMessage(err, '加载用户目录失败。'));
       }
     } finally {
       if (reqId === reqIdRef.current) setLoading(false);
@@ -261,11 +266,11 @@ export default function Users() {
       e.preventDefault();
       if (!form) return;
       if (!form.username.trim()) {
-        setFormError('A username (email) is required.');
+        setFormError('请填写用户名（邮箱）。');
         return;
       }
       if (!form.role_id) {
-        setFormError('Please select a role.');
+        setFormError('请选择一个角色。');
         return;
       }
       setSaving(true);
@@ -281,14 +286,14 @@ export default function Users() {
       try {
         await createUser(req);
         toast.success(
-          'User invited. They must complete account setup from their email before they can sign in.'
+          '邀请已发送。对方需先通过邮件完成账户设置，才能登录。'
         );
         closeForm();
         await fetchUsers();
       } catch (err) {
         const msg = isForbidden(err)
-          ? 'You do not have permission to invite users.'
-          : errorMessage(err, 'Failed to invite the user.');
+          ? '你没有邀请用户的权限。'
+          : errorMessage(err, '邀请用户失败。');
         setFormError(msg);
         setSaving(false);
       }
@@ -317,13 +322,13 @@ export default function Users() {
       };
       try {
         await updateUser(editTarget.id, req);
-        toast.success('User updated.');
+        toast.success('用户已更新。');
         closeForm();
         await fetchUsers();
       } catch (err) {
         const msg = isForbidden(err)
-          ? 'You do not have permission to edit this user.'
-          : errorMessage(err, 'Failed to update the user.');
+          ? '你没有编辑该用户的权限。'
+          : errorMessage(err, '更新用户失败。');
         setFormError(msg);
         setSaving(false);
       }
@@ -341,14 +346,14 @@ export default function Users() {
       // No conflict — the ConfirmDialog will allow the delete.
     } catch (err) {
       if (isForbidden(err)) {
-        setDeleteBlocked('You do not have permission to delete this user.');
+        setDeleteBlocked('你没有删除该用户的权限。');
       } else {
         // A 400 here means the user solely owns content that must be
         // transferred first; surface the backend's explanation verbatim.
         setDeleteBlocked(
           errorMessage(
             err,
-            'This user cannot be deleted yet — they solely own shared passwords or are the only manager of a group. Transfer ownership first.'
+            '该用户暂时无法删除——他们是某些共享密码的唯一所有者，或是某个群组的唯一管理员。请先转移所有权。'
           )
         );
       }
@@ -370,16 +375,16 @@ export default function Users() {
     setDeleting(true);
     try {
       await deleteUser(deleteTarget.id);
-      toast.success(`${displayName(deleteTarget)} was deleted.`);
+      toast.success(`已删除 ${displayName(deleteTarget)}。`);
       cancelDelete();
       await fetchUsers();
     } catch (err) {
       // The backend may still reject with a transfer requirement at commit time.
       const msg = isForbidden(err)
-        ? 'You do not have permission to delete this user.'
+        ? '你没有删除该用户的权限。'
         : errorMessage(
             err,
-            'Failed to delete the user. They may solely own content that must be transferred first.'
+            '删除用户失败。他们可能是某些内容的唯一所有者，需先转移所有权。'
           );
       setDeleteBlocked(msg);
       setDeleting(false);
@@ -392,65 +397,83 @@ export default function Users() {
 
   const hasSearch = search.length > 0;
 
+  // Client-side segment counts + filtered view (presentation only).
+  const counts = useMemo(
+    () => ({
+      all: users.length,
+      admin: users.filter((u) => u.role?.name === 'admin').length,
+      pending: users.filter((u) => !u.disabled && !u.active).length,
+      disabled: users.filter((u) => !!u.disabled).length,
+    }),
+    [users]
+  );
+
+  const visibleUsers = useMemo(() => {
+    return users.filter((u) => {
+      if (segment === 'admin') return u.role?.name === 'admin';
+      if (segment === 'pending') return !u.disabled && !u.active;
+      if (segment === 'disabled') return !!u.disabled;
+      return true;
+    });
+  }, [users, segment]);
+
   return (
-    <div className="container animate-fade-in">
-      {/* Header ----------------------------------------------------------- */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '16px',
-          marginBottom: '8px',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div>
-          <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 600 }}>Users</h1>
-          <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+    <div className="page">
+      {/* In-page section header ------------------------------------------- */}
+      <div className="page-head">
+        <div className="ph-text">
+          <h2>用户</h2>
+          <p>
             {isAdmin
-              ? 'Manage the people in your organization.'
-              : 'The people in your organization.'}
+              ? `${users.length} 名成员 · 管理你组织中的成员`
+              : `${users.length} 名成员 · 你组织中的成员`}
           </p>
         </div>
+        <div className="ph-spacer" />
         {isAdmin && (
-          <button className="btn btn-primary" onClick={openInvite}>
-            <UserPlus size={16} /> Invite User
+          <button className="btn primary" onClick={openInvite}>
+            <UserPlus /> 邀请用户
           </button>
         )}
       </div>
 
-      {/* Toolbar: search + active filter ---------------------------------- */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          margin: '20px 0',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
-          <Search
-            size={16}
-            color="var(--text-muted)"
-            style={{
-              position: 'absolute',
-              left: '12px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              pointerEvents: 'none',
-            }}
-          />
+      {/* Toolbar: search + segmented filter ------------------------------- */}
+      <div className="page-toolbar">
+        <div className="searchbox">
+          <Search />
           <input
             type="text"
-            className="form-control"
-            placeholder="Search by name, username, or email…"
+            placeholder="按姓名、用户名或邮箱搜索…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            style={{ paddingLeft: '36px' }}
-            aria-label="Search users"
+            aria-label="搜索用户"
           />
+        </div>
+        <div className="seg">
+          <button
+            className={segment === 'all' ? 'on' : ''}
+            onClick={() => setSegment('all')}
+          >
+            全部 {counts.all}
+          </button>
+          <button
+            className={segment === 'admin' ? 'on' : ''}
+            onClick={() => setSegment('admin')}
+          >
+            管理员 {counts.admin}
+          </button>
+          <button
+            className={segment === 'pending' ? 'on' : ''}
+            onClick={() => setSegment('pending')}
+          >
+            待激活 {counts.pending}
+          </button>
+          <button
+            className={segment === 'disabled' ? 'on' : ''}
+            onClick={() => setSegment('disabled')}
+          >
+            已禁用 {counts.disabled}
+          </button>
         </div>
         {isAdmin && (
           <label
@@ -458,8 +481,8 @@ export default function Users() {
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              fontSize: '14px',
-              color: 'var(--text-secondary)',
+              fontSize: '13px',
+              color: 'var(--text-2)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
               userSelect: 'none',
@@ -470,158 +493,162 @@ export default function Users() {
               checked={activeOnly}
               onChange={(e) => setActiveOnly(e.target.checked)}
             />
-            Active only
+            仅活跃用户
           </label>
         )}
       </div>
 
       {/* Load error banner ------------------------------------------------ */}
       {loadError && (
-        <div style={DANGER_BANNER} role="alert">
-          <ShieldAlert size={18} />
+        <div
+          className="warnbox"
+          role="alert"
+          style={{ margin: '14px 28px 0' }}
+        >
+          <ShieldAlert />
           <span>{loadError}</span>
         </div>
       )}
 
       {/* Body: loading / empty / table ------------------------------------ */}
       {loading ? (
-        <div className="glass-panel">
-          <FullSpinner label="Loading users…" />
+        <FullSpinner label="加载用户…" />
+      ) : visibleUsers.length === 0 ? (
+        <div className="page-scroll">
+          <EmptyState
+            icon={UsersIcon}
+            title="未找到用户"
+            description={
+              hasSearch
+                ? '没有匹配你搜索条件的用户。换个姓名或邮箱试试。'
+                : isAdmin
+                  ? '邀请你的第一位同事开始使用吧。'
+                  : '你的组织中暂时还没有其他用户。'
+            }
+            action={
+              isAdmin && !hasSearch ? (
+                <button className="btn primary" onClick={openInvite}>
+                  <UserPlus /> 邀请用户
+                </button>
+              ) : undefined
+            }
+          />
         </div>
-      ) : users.length === 0 ? (
-        <EmptyState
-          icon={UsersIcon}
-          title="No users found"
-          description={
-            hasSearch
-              ? 'No users match your search. Try a different name or email.'
-              : isAdmin
-                ? 'Invite your first teammate to get started.'
-                : 'There are no other users in your organization yet.'
-          }
-          action={
-            isAdmin && !hasSearch ? (
-              <button className="btn btn-primary" onClick={openInvite}>
-                <UserPlus size={16} /> Invite User
-              </button>
-            ) : undefined
-          }
-        />
       ) : (
-        <div className="glass-panel" style={{ overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Username</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Last logged in</th>
-                  {isAdmin && (
-                    <th style={{ textAlign: 'right' }}>Actions</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => {
-                  const status = statusOf(user);
-                  const isSelf = currentUser?.id === user.id;
-                  return (
-                    <tr
-                      key={user.id}
-                      onClick={() => !isAdmin && setViewTarget(user)}
-                      style={{ cursor: isAdmin ? 'default' : 'pointer' }}
-                    >
-                      <td>
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '12px',
-                          }}
-                        >
-                          <Avatar
-                            src={avatarUrl(user, 'small')}
-                            firstName={user.profile?.first_name}
-                            lastName={user.profile?.last_name}
-                            name={user.username}
-                            size={34}
-                          />
-                          <span style={{ fontWeight: 500 }}>
-                            {displayName(user)}
-                            {isSelf && (
-                              <span
-                                style={{
-                                  color: 'var(--text-muted)',
-                                  fontWeight: 400,
-                                  marginLeft: '6px',
-                                  fontSize: '12px',
-                                }}
-                              >
-                                (you)
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                      </td>
-                      <td style={{ color: 'var(--text-secondary)' }}>
-                        {user.username}
-                      </td>
-                      <td>
-                        <Badge variant={roleVariant(user.role?.name)}>
-                          {user.role?.name ?? 'user'}
-                        </Badge>
-                      </td>
-                      <td>
-                        <Badge variant={status.variant}>{status.label}</Badge>
-                      </td>
-                      <td style={{ color: 'var(--text-secondary)' }}>
-                        {formatDate(user.last_logged_in)}
-                      </td>
-                      {isAdmin && (
-                        <td>
-                          <div
-                            style={{
-                              display: 'flex',
-                              gap: '8px',
-                              justifyContent: 'flex-end',
-                            }}
+        <div className="page-scroll">
+          <div className="utable">
+            <div
+              className="utable-head"
+              style={{ gridTemplateColumns: '2.6fr 1fr 1.4fr 1fr 44px' }}
+            >
+              <div>用户</div>
+              <div>角色</div>
+              <div>群组</div>
+              <div>状态</div>
+              <div />
+            </div>
+            {visibleUsers.map((user) => {
+              const status = statusOf(user);
+              const isSelf = currentUser?.id === user.id;
+              return (
+                <div
+                  className={'urow' + (user.disabled ? ' disabled' : '')}
+                  key={user.id}
+                  style={{ gridTemplateColumns: '2.6fr 1fr 1.4fr 1fr 44px' }}
+                  onClick={() => !isAdmin && setViewTarget(user)}
+                >
+                  {/* User cell */}
+                  <div className="ucell-user">
+                    <Avatar
+                      src={avatarUrl(user, 'small')}
+                      firstName={user.profile?.first_name}
+                      lastName={user.profile?.last_name}
+                      name={user.username}
+                      size={36}
+                    />
+                    <div className="un">
+                      <div className="n">
+                        {displayName(user)}
+                        {isSelf && (
+                          <span
+                            className="chip blue"
+                            style={{ padding: '1px 6px' }}
                           >
-                            <button
-                              className="icon-btn"
-                              title="Edit user"
-                              aria-label={`Edit ${displayName(user)}`}
-                              onClick={() => openEdit(user)}
-                            >
-                              <Pencil size={16} />
-                            </button>
-                            <button
-                              className="icon-btn danger"
-                              title={
-                                isSelf
-                                  ? 'You cannot delete your own account'
-                                  : 'Delete user'
-                              }
-                              aria-label={`Delete ${displayName(user)}`}
-                              disabled={isSelf}
-                              style={
-                                isSelf
-                                  ? { opacity: 0.4, cursor: 'not-allowed' }
-                                  : undefined
-                              }
-                              onClick={() => !isSelf && void beginDelete(user)}
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                            你
+                          </span>
+                        )}
+                      </div>
+                      <div className="e">{user.username}</div>
+                    </div>
+                  </div>
+
+                  {/* Role cell */}
+                  <div>
+                    <RoleBadge roleName={user.role?.name} />
+                  </div>
+
+                  {/* Groups cell — the user object exposes no group names. */}
+                  <div className="gchips">
+                    <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                      —
+                    </span>
+                  </div>
+
+                  {/* Status cell */}
+                  <div className={'statuschip ' + status.tone}>
+                    <span className="sd" /> {status.label}
+                    <span
+                      style={{
+                        color: 'var(--text-3)',
+                        fontSize: 11,
+                        marginLeft: 2,
+                      }}
+                    >
+                      · {formatDate(user.last_logged_in)}
+                    </span>
+                  </div>
+
+                  {/* Actions cell (admin only) */}
+                  {isAdmin ? (
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: '4px',
+                        justifySelf: 'end',
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        className="rowmenu"
+                        title="编辑资料"
+                        aria-label={`编辑 ${displayName(user)}`}
+                        onClick={() => openEdit(user)}
+                      >
+                        <Pencil />
+                      </button>
+                      <button
+                        className="rowmenu"
+                        title={
+                          isSelf ? '无法删除自己的账户' : '删除用户'
+                        }
+                        aria-label={`删除 ${displayName(user)}`}
+                        disabled={isSelf}
+                        style={
+                          isSelf
+                            ? { opacity: 0.4, cursor: 'not-allowed' }
+                            : { color: 'var(--red-text)' }
+                        }
+                        onClick={() => !isSelf && void beginDelete(user)}
+                      >
+                        <Trash2 />
+                      </button>
+                    </div>
+                  ) : (
+                    <div />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -629,7 +656,7 @@ export default function Users() {
       {/* Invite modal (admin) --------------------------------------------- */}
       <Modal
         open={inviteOpen}
-        title="Invite User"
+        title="邀请用户"
         onClose={closeForm}
         footer={
           <>
@@ -638,7 +665,7 @@ export default function Users() {
               onClick={closeForm}
               disabled={saving}
             >
-              Cancel
+              取消
             </button>
             <button
               className="btn btn-primary"
@@ -646,7 +673,7 @@ export default function Users() {
               form="invite-user-form"
               disabled={saving}
             >
-              {saving ? 'Inviting…' : 'Send Invite'}
+              {saving ? '发送中…' : '发送邀请'}
             </button>
           </>
         }
@@ -654,26 +681,30 @@ export default function Users() {
         {form && inviteOpen && (
           <form id="invite-user-form" onSubmit={submitInvite}>
             {formError && (
-              <div style={DANGER_BANNER} role="alert">
-                <ShieldAlert size={18} />
+              <div
+                className="warnbox"
+                role="alert"
+                style={{ marginBottom: '20px' }}
+              >
+                <ShieldAlert />
                 <span>{formError}</span>
               </div>
             )}
             <p
               style={{
-                color: 'var(--text-secondary)',
+                color: 'var(--text-2)',
                 fontSize: '13px',
                 marginTop: 0,
                 marginBottom: '20px',
                 lineHeight: 1.5,
               }}
             >
-              The invited user receives a setup link and must complete account
-              creation (generating their GPG key) before they can sign in.
+              受邀用户将收到一封设置链接，并需在自己的设备上完成账户创建（生成 GPG
+              密钥对）后才能登录，私钥永不经过服务器。
             </p>
             <div className="form-group">
               <label className="form-label" htmlFor="invite-username">
-                Username (email)
+                用户名（邮箱）
               </label>
               <input
                 id="invite-username"
@@ -691,7 +722,7 @@ export default function Users() {
             <div style={{ display: 'flex', gap: '12px' }}>
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label" htmlFor="invite-first">
-                  First name
+                  名字
                 </label>
                 <input
                   id="invite-first"
@@ -706,7 +737,7 @@ export default function Users() {
               </div>
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label" htmlFor="invite-last">
-                  Last name
+                  姓氏
                 </label>
                 <input
                   id="invite-last"
@@ -722,7 +753,7 @@ export default function Users() {
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" htmlFor="invite-role">
-                Role
+                角色
               </label>
               <select
                 id="invite-role"
@@ -733,7 +764,7 @@ export default function Users() {
                 }
                 required
               >
-                {roles.length === 0 && <option value="">Loading roles…</option>}
+                {roles.length === 0 && <option value="">加载角色中…</option>}
                 {roles.map((role) => (
                   <option key={role.id} value={role.id}>
                     {role.name}
@@ -748,7 +779,7 @@ export default function Users() {
       {/* Edit modal (admin) ----------------------------------------------- */}
       <Modal
         open={!!editTarget}
-        title="Edit User"
+        title="编辑用户"
         onClose={closeForm}
         footer={
           <>
@@ -757,7 +788,7 @@ export default function Users() {
               onClick={closeForm}
               disabled={saving}
             >
-              Cancel
+              取消
             </button>
             <button
               className="btn btn-primary"
@@ -765,7 +796,7 @@ export default function Users() {
               form="edit-user-form"
               disabled={saving}
             >
-              {saving ? 'Saving…' : 'Save Changes'}
+              {saving ? '保存中…' : '保存更改'}
             </button>
           </>
         }
@@ -773,13 +804,17 @@ export default function Users() {
         {form && editTarget && (
           <form id="edit-user-form" onSubmit={submitEdit}>
             {formError && (
-              <div style={DANGER_BANNER} role="alert">
-                <ShieldAlert size={18} />
+              <div
+                className="warnbox"
+                role="alert"
+                style={{ marginBottom: '20px' }}
+              >
+                <ShieldAlert />
                 <span>{formError}</span>
               </div>
             )}
             <div className="form-group">
-              <label className="form-label">Username</label>
+              <label className="form-label">用户名</label>
               <input
                 type="text"
                 className="form-control"
@@ -791,7 +826,7 @@ export default function Users() {
             <div style={{ display: 'flex', gap: '12px' }}>
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label" htmlFor="edit-first">
-                  First name
+                  名字
                 </label>
                 <input
                   id="edit-first"
@@ -806,7 +841,7 @@ export default function Users() {
               </div>
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label" htmlFor="edit-last">
-                  Last name
+                  姓氏
                 </label>
                 <input
                   id="edit-last"
@@ -822,7 +857,7 @@ export default function Users() {
             </div>
             <div className="form-group">
               <label className="form-label" htmlFor="edit-role">
-                Role
+                角色
               </label>
               <select
                 id="edit-role"
@@ -835,7 +870,7 @@ export default function Users() {
               >
                 {roles.length === 0 && (
                   <option value={form.role_id}>
-                    {editTarget.role?.name ?? 'current role'}
+                    {editTarget.role?.name ?? '当前角色'}
                   </option>
                 )}
                 {roles.map((role) => (
@@ -864,15 +899,15 @@ export default function Users() {
                   }
                 />
                 <span>
-                  Disable this account
+                  禁用此账户
                   <span
                     style={{
                       display: 'block',
-                      color: 'var(--text-muted)',
+                      color: 'var(--text-3)',
                       fontSize: '12px',
                     }}
                   >
-                    Disabled users keep their data but cannot sign in.
+                    被禁用的用户保留其数据，但无法登录。
                   </span>
                 </span>
               </label>
@@ -884,7 +919,7 @@ export default function Users() {
       {/* Read-only profile detail (non-admin) ----------------------------- */}
       <Modal
         open={!!viewTarget}
-        title="User Profile"
+        title="用户资料"
         onClose={() => setViewTarget(null)}
         maxWidth={420}
         footer={
@@ -892,7 +927,7 @@ export default function Users() {
             className="btn btn-secondary"
             onClick={() => setViewTarget(null)}
           >
-            Close
+            关闭
           </button>
         }
       >
@@ -914,7 +949,7 @@ export default function Users() {
                 </div>
                 <div
                   style={{
-                    color: 'var(--text-secondary)',
+                    color: 'var(--text-2)',
                     fontSize: '13px',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -926,7 +961,7 @@ export default function Users() {
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <Badge variant={roleVariant(viewTarget.role?.name)}>
-                {viewTarget.role?.name ?? 'user'}
+                {viewTarget.role?.name === 'admin' ? '管理员' : '成员'}
               </Badge>
               <Badge variant={statusOf(viewTarget).variant}>
                 {statusOf(viewTarget).label}
@@ -938,10 +973,10 @@ export default function Users() {
                   display: 'flex',
                   justifyContent: 'space-between',
                   padding: '8px 0',
-                  borderBottom: '1px solid var(--panel-border)',
+                  borderBottom: '1px solid var(--border)',
                 }}
               >
-                <dt style={{ color: 'var(--text-secondary)' }}>Member since</dt>
+                <dt style={{ color: 'var(--text-2)' }}>加入时间</dt>
                 <dd style={{ margin: 0 }}>{formatDate(viewTarget.created)}</dd>
               </div>
               <div
@@ -951,9 +986,7 @@ export default function Users() {
                   padding: '8px 0',
                 }}
               >
-                <dt style={{ color: 'var(--text-secondary)' }}>
-                  Last logged in
-                </dt>
+                <dt style={{ color: 'var(--text-2)' }}>最近登录</dt>
                 <dd style={{ margin: 0 }}>
                   {formatDate(viewTarget.last_logged_in)}
                 </dd>
@@ -966,29 +999,29 @@ export default function Users() {
       {/* Delete confirm (admin) ------------------------------------------- */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="Delete User"
+        title="删除用户"
         danger={!deleteBlocked}
         loading={deleting || deleteChecking}
-        confirmLabel={deleteBlocked ? 'OK' : 'Delete'}
-        cancelLabel={deleteBlocked ? 'Close' : 'Cancel'}
+        confirmLabel={deleteBlocked ? '知道了' : '删除'}
+        cancelLabel={deleteBlocked ? '关闭' : '取消'}
         message={
           deleteChecking ? (
             <span
               style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
             >
-              Checking whether this user can be deleted…
+              正在检查该用户是否可以删除…
             </span>
           ) : deleteBlocked ? (
-            <span style={{ color: 'var(--danger-color)' }}>
+            <span style={{ color: 'var(--red-text)' }}>
               {deleteBlocked}
             </span>
           ) : (
             <>
-              Permanently delete{' '}
+              确定要永久删除{' '}
               <strong>
-                {deleteTarget ? displayName(deleteTarget) : 'this user'}
+                {deleteTarget ? displayName(deleteTarget) : '该用户'}
               </strong>
-              ? This cannot be undone. Their access is revoked immediately.
+              吗？此操作不可撤销，其访问权限将立即被吊销。
             </>
           )
         }
