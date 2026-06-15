@@ -10,7 +10,6 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
     Vault,
     Users,
-    UsersRound,
     Settings,
     KeyRound,
     LogOut,
@@ -34,8 +33,8 @@ interface NavItem {
 /** Primary navigation, icon-only in the Aegis rail (tooltips carry the label). */
 const NAV_ITEMS: NavItem[] = [
     { label: '保险库', path: '/', icon: Vault },
-    { label: '用户', path: '/users', icon: Users },
-    { label: '群组', path: '/groups', icon: UsersRound },
+    { label: '用户', path: '/users', icon: User },
+    { label: '群组', path: '/groups', icon: Users },
     { label: '设置', path: '/settings', icon: Settings },
 ];
 
