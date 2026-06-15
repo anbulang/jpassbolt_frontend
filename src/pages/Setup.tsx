@@ -34,6 +34,7 @@ import { useKey } from '../crypto/KeyContext';
 import { loginWithGpg } from '../auth';
 import { startSetup, completeSetup } from '../services/setup';
 import { Stepper, KeyGen, ppScore, PP_LABEL, downloadRecoveryKit } from './flowHelpers';
+import KeyFileButton from '../components/KeyFileButton';
 import type { User } from '../types';
 
 const STEPS = ['邀请', '密钥', '口令', '完成'];
@@ -325,15 +326,29 @@ export default function Setup() {
               </div>
 
               {keyMode === 'import' && (
-                <textarea
-                  className="flow-textarea"
-                  placeholder="-----BEGIN PGP PRIVATE KEY BLOCK-----"
-                  value={importArmored}
-                  onChange={(e) => setImportArmored(e.target.value)}
-                  rows={6}
-                  spellCheck={false}
-                  style={{ marginTop: 4 }}
-                />
+                <>
+                  <div
+                    className="pf-label"
+                    style={{ display: 'flex', alignItems: 'center', margin: '4px 0 6px' }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <KeyRound size={15} /> 粘贴或选择 .asc 私钥
+                    </span>
+                    <span style={{ marginLeft: 'auto' }}>
+                      {/* 可选：选择本地 .asc 私钥文件填入下方文本框；仍可直接粘贴。文件仅在浏览器内读取。 */}
+                      <KeyFileButton onLoaded={(t) => setImportArmored(t)} />
+                    </span>
+                  </div>
+                  <textarea
+                    className="flow-textarea"
+                    placeholder="-----BEGIN PGP PRIVATE KEY BLOCK-----"
+                    value={importArmored}
+                    onChange={(e) => setImportArmored(e.target.value)}
+                    rows={6}
+                    spellCheck={false}
+                    style={{ marginTop: 4 }}
+                  />
+                </>
               )}
 
               <div className="flow-foot">

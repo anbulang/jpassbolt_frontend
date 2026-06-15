@@ -5,6 +5,7 @@ import { useKey } from '../crypto/KeyContext';
 import { probeMfaRequired } from '../services/mfa';
 import MfaChallenge from '../components/MfaChallenge';
 import { Vault, KeyRound, Lock, Eye, EyeOff, ShieldCheck, AlertTriangle, LogIn } from 'lucide-react';
+import KeyFileButton from '../components/KeyFileButton';
 
 export default function Login() {
     const [pgpKey, setPgpKey] = useState('');
@@ -104,8 +105,17 @@ export default function Login() {
                             </div>
                         )}
 
-                        <div className="pf-label" style={{ marginBottom: 7 }}>
-                            <KeyRound size={15} /> 你的 GPG 私钥
+                        <div
+                            className="pf-label"
+                            style={{ marginBottom: 7, display: 'flex', alignItems: 'center' }}
+                        >
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <KeyRound size={15} /> 你的 GPG 私钥
+                            </span>
+                            <span style={{ marginLeft: 'auto' }}>
+                                {/* 可选：选择本地 .asc 私钥文件填入下方文本框；仍可直接粘贴。文件仅在浏览器内读取。 */}
+                                <KeyFileButton onLoaded={(t) => setPgpKey(t)} />
+                            </span>
                         </div>
                         <textarea
                             className="flow-textarea"

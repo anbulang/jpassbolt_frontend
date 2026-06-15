@@ -796,6 +796,100 @@
 }
 .flow-textarea:focus { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--surface); }
 
+/* ---- stepper (邀请 / 密钥 / 口令 / 完成) ---- */
+.flow-steps { display: flex; align-items: center; gap: 0; margin-bottom: 4px; }
+.fstep { display: flex; align-items: center; gap: 8px; }
+.fstep .fs-dot {
+  width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 11.5px; font-weight: 600; background: var(--surface-3); color: var(--text-3);
+  flex: 0 0 24px; transition: background .2s, color .2s;
+}
+.fstep .fs-dot svg { width: 13px; height: 13px; }
+.fstep .fs-l { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.fstep.on .fs-dot { background: var(--accent); color: #fff; }
+.fstep.on .fs-l { color: var(--text); font-weight: 500; }
+.fstep.done .fs-dot { background: var(--green); color: #fff; }
+.fstep.done .fs-l { color: var(--text-2); }
+.fstep-line { flex: 1; height: 2px; background: var(--border); margin: 0 8px; border-radius: 2px; min-width: 12px; }
+.fstep-line.done { background: var(--green); }
+
+/* ---- invite identity rows ---- */
+.invite-meta { display: flex; flex-direction: column; gap: 1px; }
+.invite-line { display: flex; align-items: center; gap: 10px; padding: 11px 2px; font-size: 13px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.invite-line:last-child { border-bottom: none; }
+.invite-line svg { width: 16px; height: 16px; color: var(--text-3); flex: 0 0 16px; }
+.invite-line .k { color: var(--text-3); width: 76px; flex: 0 0 76px; }
+.invite-line .v { color: var(--text); font-weight: 500; }
+
+/* ---- big option cards (生成 vs 导入 / 验证方式) ---- */
+.opt-card {
+  display: flex; align-items: flex-start; gap: 13px; padding: 15px 16px; border-radius: var(--r);
+  border: 1.5px solid var(--border); cursor: pointer; transition: border-color .14s, background .14s;
+  margin-bottom: 10px; width: 100%; text-align: left; background: var(--surface);
+}
+.opt-card:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.opt-card.sel { border-color: var(--accent); background: var(--accent-soft); }
+.opt-card .oc-ico { width: 40px; height: 40px; border-radius: 11px; background: var(--surface-3); color: var(--text-2); display: grid; place-items: center; flex: 0 0 40px; }
+.opt-card.sel .oc-ico { background: var(--accent); color: #fff; }
+.opt-card .oc-ico svg { width: 21px; height: 21px; }
+.opt-card .oc-t { flex: 1; min-width: 0; }
+.opt-card .oc-t .a { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.opt-card .oc-t .b { font-size: 12.5px; color: var(--text-3); margin-top: 3px; line-height: 1.45; }
+.opt-card .oc-radio { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border-strong); flex: 0 0 20px; display: grid; place-items: center; margin-top: 2px; }
+.opt-card.sel .oc-radio { border-color: var(--accent); }
+.opt-card.sel .oc-radio::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.recommend { font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 5px; background: var(--green-soft); color: var(--green-text); }
+
+/* ---- key-generation animation ---- */
+.keygen { text-align: center; padding: 8px 0 4px; }
+.keygen-ring { width: 96px; height: 96px; margin: 0 auto 18px; position: relative; }
+.keygen-ring .kr-core { position: absolute; inset: 0; display: grid; place-items: center; color: var(--accent); }
+.keygen-ring .kr-core svg { width: 34px; height: 34px; }
+.keygen-spin { position: absolute; inset: 0; border: 3px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; animation: spin .9s linear infinite; }
+.keygen-log { font-family: var(--mono); font-size: 12px; color: var(--text-3); margin-top: 6px; min-height: 18px; }
+.keygen-bits { display: flex; justify-content: center; gap: 3px; margin: 14px auto 0; max-width: 280px; flex-wrap: wrap; }
+.keygen-bits i { width: 7px; height: 12px; border-radius: 2px; background: var(--surface-3); }
+.keygen-bits i.on { background: var(--accent); }
+
+/* ---- passphrase fields + strength + requirements ---- */
+.pp-fields { display: flex; flex-direction: column; gap: 12px; }
+.req-list { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; }
+.req { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text-3); white-space: nowrap; }
+.req .rc { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--border-strong); display: grid; place-items: center; flex: 0 0 18px; }
+.req .rc svg { width: 12px; height: 12px; }
+.req.ok { color: var(--green-text); }
+.req.ok .rc { background: var(--green); border-color: var(--green); color: #fff; }
+.pp-meter { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; display: flex; gap: 3px; }
+.pp-meter i { flex: 1; border-radius: 3px; background: var(--surface-3); transition: background .2s; }
+.pp-meter.s1 i:nth-child(1) { background: var(--red); }
+.pp-meter.s2 i:nth-child(-n+2) { background: var(--amber); }
+.pp-meter.s3 i:nth-child(-n+3) { background: var(--amber); }
+.pp-meter.s4 i { background: var(--green); }
+.pp-meter-row { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; margin-top: 8px; }
+
+.warn-soft {
+  display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--r); margin-top: 16px;
+  background: var(--amber-soft); border: 1px solid color-mix(in oklch, var(--amber) 32%, transparent);
+  font-size: 12px; color: var(--amber-text); line-height: 1.5;
+}
+.warn-soft svg { width: 17px; height: 17px; flex: 0 0 17px; margin-top: 1px; }
+
+/* ---- done step: fingerprint + recovery kit ---- */
+.done-fp { padding: 14px 16px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--border); margin-bottom: 14px; }
+.done-fp .dfp-l { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); margin-bottom: 8px; display: flex; align-items: center; gap: 7px; }
+.done-fp .dfp-l svg { width: 13px; height: 13px; }
+.done-fp .dfp-v { font-family: var(--mono); font-size: 13px; color: var(--text); letter-spacing: 0.5px; word-break: break-all; }
+.kit-row { display: flex; align-items: center; gap: 12px; padding: 13px 15px; border-radius: var(--r); border: 1px solid var(--border); background: var(--surface); margin-bottom: 14px; }
+.kit-row .kr-ico { width: 38px; height: 38px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-text); display: grid; place-items: center; flex: 0 0 38px; }
+.kit-row .kr-ico svg { width: 19px; height: 19px; }
+.kit-row .kr-t { flex: 1; min-width: 0; }
+.kit-row .kr-t .a { font-size: 13.5px; font-weight: 500; }
+.kit-row .kr-t .b { font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
+
+/* ---- flow footer nav (上一步 / 下一步) ---- */
+.flow-foot { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+.flow-foot .spacer { flex: 1; }
+
 /* compact list density (toggled on .app.compact) */
 .app.compact .frow { height: 30px; }
 .app.compact .rescard { padding: 7px 10px; }

@@ -45,6 +45,7 @@ import { useKey } from '../crypto/KeyContext';
 import { loginWithGpg } from '../auth';
 import { requestRecovery, startRecovery, completeRecovery } from '../services/setup';
 import { Stepper } from './flowHelpers';
+import KeyFileButton from '../components/KeyFileButton';
 import type { User } from '../types';
 
 const STEPS = ['账户', '验证', '重设', '完成'];
@@ -206,15 +207,6 @@ export default function Recovery() {
     } finally {
       setLoading(false);
     }
-  };
-
-  // File picker -> read a .asc backup into the textarea.
-  const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setImportArmored(String(reader.result ?? ''));
-    reader.readAsText(file);
   };
 
   return (
@@ -424,6 +416,18 @@ export default function Recovery() {
 
               {method === 'backup' && (
                 <>
+                  <div
+                    className="pf-label"
+                    style={{ display: 'flex', alignItems: 'center', margin: '0 0 6px' }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Download size={15} /> 粘贴或选择 .asc 私钥备份
+                    </span>
+                    <span style={{ marginLeft: 'auto' }}>
+                      {/* 可选：选择本地 .asc 私钥备份文件填入下方文本框；仍可直接粘贴。文件仅在浏览器内读取。 */}
+                      <KeyFileButton onLoaded={(t) => setImportArmored(t)} label="选择 .asc 备份" />
+                    </span>
+                  </div>
                   <textarea
                     className="flow-textarea"
                     placeholder="-----BEGIN PGP PRIVATE KEY BLOCK-----"
@@ -433,18 +437,6 @@ export default function Recovery() {
                     spellCheck={false}
                     style={{ marginTop: 6 }}
                   />
-                  <label
-                    className="flow-note"
-                    style={{ cursor: 'pointer', justifyContent: 'flex-start', marginTop: 8 }}
-                  >
-                    <Download /> 或从文件选择 .asc 备份
-                    <input
-                      type="file"
-                      accept=".asc,.txt,.gpg,.key,application/pgp-keys"
-                      onChange={onPickFile}
-                      style={{ display: 'none' }}
-                    />
-                  </label>
 
                   <div className="pf-label" style={{ marginTop: 14 }}>
                     <KeyRound size={15} /> 该备份的 passphrase
