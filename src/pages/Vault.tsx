@@ -126,6 +126,18 @@ export default function Vault() {
 
   const selected = filtered.find((r) => r.id === selectedId) ?? null;
 
+  // Invert folderMembership (folderId -> resourceIds) into resourceId -> folderId
+  // so the edit modal can preselect a resource's current folder. A resource lives
+  // in at most one folder per user, so the mapping is unambiguous. Membership is
+  // derived from folders_relations — the resource row itself carries no folder.
+  const resourceFolderId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const [folderId, ids] of folderMembership) {
+      for (const rid of ids) m.set(rid, folderId);
+    }
+    return m;
+  }, [folderMembership]);
+
   const toggleFavorite = async (resource: Resource) => {
     setFavBusyId(resource.id);
     try {
@@ -339,6 +351,7 @@ export default function Vault() {
         resourceTypes={resourceTypes}
         folders={folders}
         defaultFolderId={selectedFolderId}
+        currentFolderId={editing ? resourceFolderId.get(editing.id) ?? null : null}
         onClose={() => {
           setCreating(false);
           setEditing(null);
