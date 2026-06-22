@@ -1,8 +1,11 @@
 import axios from 'axios';
 
-// Base API instance configured with the JPassbolt backend URL
+// Base API instance configured with the JPassbolt backend URL.
+// NOTE: 8080 is currently occupied by the unrelated "firewatch-platform-api"
+// container, so the email-enabled JPassbolt backend runs on 8090 (local profile,
+// MailHog). Override via VITE_API_BASE_URL; revert to 8080 once it is free.
 export const api = axios.create({
-    baseURL: 'http://localhost:8080/api',
+    baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8090/api',
     headers: {
         'Content-Type': 'application/json',
     },

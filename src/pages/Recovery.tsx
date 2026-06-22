@@ -20,7 +20,7 @@
 // SECURITY: the armored PRIVATE key + passphrase live in component state ONLY and
 // never touch the network. completeRecovery sends ONLY the armored public key.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import * as openpgp from 'openpgp';
 import {
@@ -39,6 +39,7 @@ import {
   Mail,
   CheckCircle2,
   X,
+  Puzzle,
 } from 'lucide-react';
 import { fingerprintOf } from '../gpg';
 import { useKey } from '../crypto/KeyContext';
@@ -86,6 +87,35 @@ export default function Recovery() {
   const token = params.tokenId ?? search.get('token') ?? '';
   // Complete mode iff the link carries both a user id and a token.
   const isComplete = Boolean(userId && token);
+
+  // Optional "install the extension" prompt (the recovery page works fully in the
+  // web app without it — this mirrors official Passbolt's install hint). The
+  // extension's content script sets <html data-jpassbolt-extension>; it injects
+  // asynchronously, so watch for the attribute appearing.
+  const [extInstalled, setExtInstalled] = useState(false);
+  const [extDismissed, setExtDismissed] = useState(false);
+  useEffect(() => {
+    const has = () => Boolean(document.documentElement.getAttribute('data-jpassbolt-extension'));
+    if (has()) {
+      setExtInstalled(true);
+      return;
+    }
+    const obs = new MutationObserver(() => {
+      if (has()) {
+        setExtInstalled(true);
+        obs.disconnect();
+      }
+    });
+    obs.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-jpassbolt-extension'],
+    });
+    const timer = window.setTimeout(() => obs.disconnect(), 3000);
+    return () => {
+      obs.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   // Flow state. In complete mode we land directly on step 1 (验证) after the link
   // validates; in request mode we stay on step 0 (账户) to collect the email.
@@ -239,6 +269,28 @@ export default function Recovery() {
         </div>
 
         <div className="flow-body">
+          {!extInstalled && !extDismissed && (
+            <div
+              className="warnbox"
+              style={{ marginBottom: 16, alignItems: 'flex-start', gap: 10 }}
+            >
+              <Puzzle />
+              <div style={{ flex: 1 }}>
+                <strong>安装 JPassbolt 浏览器扩展</strong>
+                <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 2 }}>
+                  网页版可直接完成恢复；安装扩展可获得跨站自动填表与更强的密钥隔离（可选）。
+                </div>
+              </div>
+              <button
+                type="button"
+                className="pf-eye"
+                onClick={() => setExtDismissed(true)}
+                title="忽略"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
           {error && (
             <div className="warnbox" style={{ marginBottom: 16 }}>
               <AlertTriangle />

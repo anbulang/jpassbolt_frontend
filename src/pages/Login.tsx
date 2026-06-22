@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loginWithGpg } from '../auth';
 import { useKey } from '../crypto/KeyContext';
 import { probeMfaRequired } from '../services/mfa';
 import MfaChallenge from '../components/MfaChallenge';
-import { Vault, KeyRound, Lock, Eye, EyeOff, ShieldCheck, AlertTriangle, LogIn } from 'lucide-react';
+import { Vault, KeyRound, Lock, Eye, EyeOff, ShieldCheck, AlertTriangle, LogIn, Puzzle, X } from 'lucide-react';
 import KeyFileButton from '../components/KeyFileButton';
 
 export default function Login() {
@@ -18,6 +18,35 @@ export default function Login() {
     const [mfaRequired, setMfaRequired] = useState(false);
     const navigate = useNavigate();
     const { setArmoredKeys, unlock } = useKey();
+
+    // Detect the JPassbolt browser extension. Its content script sets
+    // <html data-jpassbolt-extension="version"> on load; the SPA works fully
+    // WITHOUT it, so this only drives an optional, dismissible install prompt.
+    // The extension injects asynchronously, so watch for the attribute appearing.
+    const [extInstalled, setExtInstalled] = useState(false);
+    const [extDismissed, setExtDismissed] = useState(false);
+    useEffect(() => {
+        const has = () => Boolean(document.documentElement.getAttribute('data-jpassbolt-extension'));
+        if (has()) {
+            setExtInstalled(true);
+            return;
+        }
+        const obs = new MutationObserver(() => {
+            if (has()) {
+                setExtInstalled(true);
+                obs.disconnect();
+            }
+        });
+        obs.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['data-jpassbolt-extension'],
+        });
+        const timer = window.setTimeout(() => obs.disconnect(), 3000);
+        return () => {
+            obs.disconnect();
+            window.clearTimeout(timer);
+        };
+    }, []);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -89,6 +118,28 @@ export default function Login() {
                 </div>
 
                 <div className="flow-body">
+                    {!extInstalled && !extDismissed && (
+                        <div
+                            className="warnbox"
+                            style={{ marginBottom: 16, alignItems: 'flex-start', gap: 10 }}
+                        >
+                            <Puzzle />
+                            <div style={{ flex: 1 }}>
+                                <strong>安装 JPassbolt 浏览器扩展</strong>
+                                <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 2 }}>
+                                    网页版功能完整、可直接登录；安装扩展可获得跨站自动填表与更强的密钥隔离（可选）。
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                className="pf-eye"
+                                onClick={() => setExtDismissed(true)}
+                                title="忽略"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+                    )}
                     <div className="flow-h">
                         <div className="flow-badge">
                             <Lock />
