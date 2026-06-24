@@ -14,14 +14,16 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Search, Star, Lock, AlertTriangle, Clock, X } from 'lucide-react';
-import type { Resource, ResourceType } from '../types';
+import type { Folder, Resource, ResourceType } from '../types';
 import { deleteResource } from '../services/resources';
+import { listFolders, moveResource } from '../services/folders';
 import { getResourceTypes } from '../services/settings';
 import { addFavorite, removeFavorite, FavoriteAlreadyExistsError } from '../services/favorites';
 import { useToast } from '../components/toastContext';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import FolderTree, { RESOURCE_DRAG_MIME } from '../components/FolderTree';
 import ShareDialog from '../components/ShareDialog';
+import { Modal } from '../components/Modal';
 import { useVaultData } from './vault/useVaultData';
 import { useResolvedResources } from './vault/useResolvedResources';
 import { SecretPanel } from './vault/SecretPanel';
@@ -93,12 +95,40 @@ export default function Vault() {
   const [deleting, setDeleting] = useState(false);
   const [favBusyId, setFavBusyId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [moving, setMoving] = useState<Resource | null>(null);
+  const [moveTarget, setMoveTarget] = useState<string>('');
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [moveFolderOptions, setMoveFolderOptions] = useState<Folder[]>([]);
 
   useEffect(() => {
     getResourceTypes()
       .then(setResourceTypes)
       .catch(() => setResourceTypes([]));
   }, []);
+
+  // Refresh the "移动到…" dialog's folder options when it opens (mirrors the
+  // create modal): seed instantly from the cached vault list, then replace with a
+  // live /folders.json read so a folder just created in the sidebar is a valid
+  // move target without a full reload. Failures keep the seeded cached list.
+  useEffect(() => {
+    if (!moving) return;
+    setMoveFolderOptions(folders);
+    let cancelled = false;
+    (async () => {
+      try {
+        const fresh = await listFolders();
+        if (!cancelled) setMoveFolderOptions(fresh);
+      } catch {
+        // keep the seeded cached list
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // `folders` is re-seeded synchronously above on open; omitting it from deps
+    // avoids refetching on every parent refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moving]);
 
   const filtered = useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase();
@@ -178,6 +208,37 @@ export default function Vault() {
 
   const openEdit = (resource: Resource) => setEditing(resource);
   const openShare = (resource: Resource) => setSharing(resource);
+  // Folder change is a standalone action, separate from edit — mirroring Passbolt:
+  // the resource row carries no folder, so relocation goes through PUT /move/Resource
+  // (folders_relations), never the resource update.
+  const openMove = (resource: Resource) => {
+    setMoving(resource);
+    setMoveTarget(resourceFolderId.get(resource.id) ?? '');
+  };
+  const confirmMove = async () => {
+    if (!moving) return;
+    const target = moveTarget || null;
+    const current = resourceFolderId.get(moving.id) ?? null;
+    if (target === current) {
+      setMoving(null);
+      return;
+    }
+    setMoveBusy(true);
+    try {
+      await moveResource(moving.id, target);
+      toast.success('已移动凭据');
+      // Close only after BOTH the move and the refetch finish. Closing before
+      // refetch left a window where reopening the dialog showed it frozen
+      // (moveBusy still true until the finally below). Holding it open keeps the
+      // busy state coherent, then it closes and clears together.
+      await refetch();
+      setMoving(null);
+    } catch (err) {
+      toast.error(errMessage(err, '移动凭据失败。'));
+    } finally {
+      setMoveBusy(false);
+    }
+  };
 
   const scopeName = debouncedSearch.trim()
     ? '搜索结果'
@@ -328,6 +389,7 @@ export default function Vault() {
           resourceTypes={resourceTypes}
           onEdit={openEdit}
           onShare={openShare}
+          onMove={openMove}
           onToggleFavorite={toggleFavorite}
           onDelete={(r) => setDeleteTarget(r)}
           favBusy={favBusyId === selected.id}
@@ -351,7 +413,6 @@ export default function Vault() {
         resourceTypes={resourceTypes}
         folders={folders}
         defaultFolderId={selectedFolderId}
-        currentFolderId={editing ? resourceFolderId.get(editing.id) ?? null : null}
         onClose={() => {
           setCreating(false);
           setEditing(null);
@@ -372,6 +433,43 @@ export default function Vault() {
           }}
         />
       )}
+
+      {/* Move dialog — folder change is a standalone op, separate from edit. */}
+      <Modal
+        open={!!moving}
+        title={moving ? `移动「${moving.name}」` : '移动凭据'}
+        onClose={() => {
+          if (!moveBusy) setMoving(null);
+        }}
+        maxWidth={420}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setMoving(null)} disabled={moveBusy}>
+              取消
+            </button>
+            <button className="btn btn-primary" onClick={() => void confirmMove()} disabled={moveBusy}>
+              {moveBusy ? '移动中…' : '移动'}
+            </button>
+          </>
+        }
+      >
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">目标文件夹</label>
+          <select
+            className="form-control"
+            value={moveTarget}
+            onChange={(e) => setMoveTarget(e.target.value)}
+            disabled={moveBusy}
+          >
+            <option value="">无文件夹（根目录）</option>
+            {moveFolderOptions.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </Modal>
 
       {/* Delete confirmation */}
       <ConfirmDialog

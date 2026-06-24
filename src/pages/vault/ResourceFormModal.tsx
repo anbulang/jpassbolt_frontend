@@ -20,7 +20,7 @@ import type {
   ResourceUpdateRequest,
 } from '../../types';
 import { createResource, updateResource } from '../../services/resources';
-import { listFolders, moveResource } from '../../services/folders';
+import { listFolders } from '../../services/folders';
 import { getSecretForResource } from '../../services/secrets';
 import { getMetadataTypesSettings } from '../../services/metadata';
 import { useKey } from '../../crypto/KeyContext';
@@ -47,13 +47,6 @@ interface ResourceFormModalProps {
   folders: Folder[];
   /** Pre-selected destination folder for new resources (create mode). */
   defaultFolderId?: string | null;
-  /**
-   * The resource's CURRENT folder (edit mode) so the picker preselects it and a
-   * change can be detected on save. null = at the tree root. Membership is not a
-   * field on the resource (it lives per-user in folders_relations), so the Vault
-   * derives this from the folder list and passes it in.
-   */
-  currentFolderId?: string | null;
   onClose: () => void;
   /** Called after a successful create/update so the caller refetches. */
   onSaved: () => void;
@@ -123,7 +116,6 @@ export function ResourceFormModal({
   resourceTypes,
   folders,
   defaultFolderId,
-  currentFolderId,
   onClose,
   onSaved,
 }: ResourceFormModalProps) {
@@ -195,7 +187,7 @@ export function ResourceFormModal({
         description: isEncryptedDescriptionType(slug) ? '' : resource.description ?? '',
         password: '',
         resourceTypeId: resource.resource_type_id,
-        folderParentId: currentFolderId ?? '',
+        folderParentId: '',
       });
     } else {
       const defaultType =
@@ -208,7 +200,7 @@ export function ResourceFormModal({
         folderParentId: defaultFolderId ?? '',
       });
     }
-  }, [open, isEdit, resource, resourceTypes, typeOptions, defaultFolderId, currentFolderId]);
+  }, [open, isEdit, resource, resourceTypes, typeOptions, defaultFolderId]);
 
   // -------------------------------------------------------------------------
   // Async prefill (edit mode): prefetch + decrypt the existing secret to fill
@@ -270,12 +262,14 @@ export function ResourceFormModal({
     };
   }, [open]);
 
-  // Refresh the folder picker options whenever the modal opens. Re-seed from the
-  // prop first (instant, non-empty), then replace with a live /folders.json read
-  // so a just-created folder is selectable without a full vault reload. Failures
-  // are tolerated — the seeded prop list remains usable.
+  // Refresh the create-mode folder picker whenever the modal opens. Re-seed from
+  // the prop first (instant, non-empty), then replace with a live /folders.json
+  // read so a folder just created in the sidebar is selectable without a full
+  // vault reload. Skipped in edit mode — folder change there is a separate "移动
+  // 到…" action (Passbolt stores tree placement in folders_relations, not on the
+  // resource, and PUT /resources never touches it). Failures keep the prop list.
   useEffect(() => {
-    if (!open) return;
+    if (!open || isEdit) return;
     setFolderOptions(folders);
     let cancelled = false;
     (async () => {
@@ -292,7 +286,7 @@ export function ResourceFormModal({
     // `folders` is re-seeded synchronously above on each open; listing it as a
     // dep would refetch on every parent refetch, so it is intentionally omitted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, isEdit]);
 
   // -------------------------------------------------------------------------
   // Create mode: keep the selected resource type VALID as the org policy loads.
@@ -342,18 +336,6 @@ export function ResourceFormModal({
       setError('所选资源类型不可用。请刷新后重试。');
       return;
     }
-
-    // Edit-mode folder relocation rides on a SEPARATE endpoint than the resource
-    // update: Passbolt stores tree placement in folders_relations (per user), not
-    // on the resource row, so moving is PUT /move/Resource/{id} and never part of
-    // the resource PUT. No-op when the folder selection is unchanged.
-    const applyFolderChange = async (resourceId: string) => {
-      const target = form.folderParentId || null;
-      const current = currentFolderId ?? null;
-      if (target !== current) {
-        await moveResource(resourceId, target);
-      }
-    };
 
     // Decide v4 (cleartext columns) vs v5 (encrypted metadata) purely from the
     // org policy + metadata-key availability — never a user toggle. Today's
@@ -409,7 +391,6 @@ export function ResourceFormModal({
             secrets: [{ data: armoredSecret }],
           };
           await updateResource(resource.id, req);
-          await applyFolderChange(resource.id);
           toast.success('凭据已更新');
         } else {
           // v5 create: the real name/username/uri/description live encrypted in
@@ -437,7 +418,6 @@ export function ResourceFormModal({
           secrets: [{ data: armoredSecret }],
         };
         await updateResource(resource.id, req);
-        await applyFolderChange(resource.id);
         toast.success('凭据已更新');
       } else {
         const req: ResourceCreateRequest = {
@@ -577,21 +557,23 @@ export function ResourceFormModal({
         </select>
       </div>
 
-      <div className="form-group" style={{ marginBottom: 0 }}>
-        <label className="form-label">文件夹</label>
-        <select
-          className="form-control"
-          value={form.folderParentId}
-          onChange={(e) => setField('folderParentId', e.target.value)}
-        >
-          <option value="">无文件夹（根目录）</option>
-          {folderOptions.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {!isEdit && (
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">文件夹</label>
+          <select
+            className="form-control"
+            value={form.folderParentId}
+            onChange={(e) => setField('folderParentId', e.target.value)}
+          >
+            <option value="">无文件夹（根目录）</option>
+            {folderOptions.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
     </Modal>
   );
 }

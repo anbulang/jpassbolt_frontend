@@ -23,6 +23,7 @@ import {
   Link as LinkIcon,
   Share2,
   Pencil,
+  Move as MoveIcon,
   Star,
   KeyRound,
   Clock,
@@ -305,6 +306,8 @@ interface SecretPanelProps {
   onShare: (resource: Resource) => void;
   onToggleFavorite: (resource: Resource) => void;
   onDelete?: (resource: Resource) => void;
+  /** Open the standalone "移动到…" dialog (folder change is separate from edit). */
+  onMove?: (resource: Resource) => void;
   favBusy?: boolean;
 }
 
@@ -315,6 +318,7 @@ export function SecretPanel({
   onShare,
   onToggleFavorite,
   onDelete,
+  onMove,
   favBusy,
 }: SecretPanelProps) {
   const [tab, setTab] = useState<'detail' | 'shared' | 'comment'>('detail');
@@ -443,6 +447,11 @@ export function SecretPanel({
             <button className="iconbtn" title="编辑" onClick={() => onEdit(resource)}>
               <Pencil />
             </button>
+            {onMove && (
+              <button className="iconbtn" title="移动到…" onClick={() => onMove(resource)}>
+                <MoveIcon />
+              </button>
+            )}
             {onDelete && (
               <button
                 className="iconbtn"
