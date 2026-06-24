@@ -9,7 +9,7 @@
 // SECURITY: the armored PRIVATE key + passphrase live in component state ONLY and
 // never touch the network. The server receives only the public key.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import * as openpgp from 'openpgp';
 import {
@@ -28,6 +28,8 @@ import {
   Users,
   Globe,
   Mail,
+  Puzzle,
+  X,
 } from 'lucide-react';
 import { generateKeyPair, fingerprintOf } from '../gpg';
 import { useKey } from '../crypto/KeyContext';
@@ -94,6 +96,34 @@ export default function Setup() {
   const [armoredPrivateKey, setArmoredPrivateKey] = useState('');
   const [armoredPublicKey, setArmoredPublicKey] = useState('');
   const [fingerprint, setFingerprint] = useState('');
+
+  // Optional "install the extension" prompt (consistent with Login/Recovery; the
+  // web app completes setup without it). The extension content script sets
+  // <html data-jpassbolt-extension>; it injects async, so watch for it.
+  const [extInstalled, setExtInstalled] = useState(false);
+  const [extDismissed, setExtDismissed] = useState(false);
+  useEffect(() => {
+    const has = () => Boolean(document.documentElement.getAttribute('data-jpassbolt-extension'));
+    if (has()) {
+      setExtInstalled(true);
+      return;
+    }
+    const obs = new MutationObserver(() => {
+      if (has()) {
+        setExtInstalled(true);
+        obs.disconnect();
+      }
+    });
+    obs.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-jpassbolt-extension'],
+    });
+    const timer = window.setTimeout(() => obs.disconnect(), 3000);
+    return () => {
+      obs.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   const score = ppScore(pf);
   const match = pf.length > 0 && pf === pf2;
@@ -217,6 +247,28 @@ export default function Setup() {
         </div>
 
         <div className="flow-body">
+          {!extInstalled && !extDismissed && (
+            <div
+              className="warnbox"
+              style={{ marginBottom: 16, alignItems: 'flex-start', gap: 10 }}
+            >
+              <Puzzle />
+              <div style={{ flex: 1 }}>
+                <strong>安装 JPassbolt 浏览器扩展</strong>
+                <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 2 }}>
+                  网页版可直接完成设置；安装扩展可获得跨站自动填表与更强的密钥隔离（可选）。
+                </div>
+              </div>
+              <button
+                type="button"
+                className="pf-eye"
+                onClick={() => setExtDismissed(true)}
+                title="忽略"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
           {error && (
             <div className="warnbox" style={{ marginBottom: 16 }}>
               <AlertTriangle />
