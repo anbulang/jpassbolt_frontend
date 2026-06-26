@@ -131,25 +131,42 @@ function Ring({ pct, color }: { pct: number; color: string }) {
  * Clicking the pill locks immediately. When idleSecs is 0, auto-lock is off.
  */
 function LockPill({ idleSecs, onLock }: { idleSecs: number; onLock: () => void }) {
+    // Drive the countdown from a single absolute deadline, NOT a decrementing
+    // counter. The old counter flickered between full and full-1 (e.g.
+    // 30:00 ↔ 29:59) because an activity "reset" (snap back to full) and the
+    // 1 Hz tick (minus one) could both land within the same wall-clock second,
+    // racing each other. Deriving `remain` from one monotonic deadline means
+    // continuous activity simply pins the display at full with no down-tick.
+    const deadlineRef = useRef(Date.now() + idleSecs * 1000);
     const [remain, setRemain] = useState(idleSecs);
     const lastActivity = useRef(0);
 
     useEffect(() => {
         if (idleSecs <= 0) return; // auto-lock disabled
-        const iv = window.setInterval(() => {
-            setRemain((s) => {
-                if (s <= 1) {
-                    onLock();
-                    return idleSecs;
-                }
-                return s - 1;
-            });
-        }, 1000);
+        deadlineRef.current = Date.now() + idleSecs * 1000;
+        setRemain(idleSecs);
+        const tick = () => {
+            const left = Math.ceil((deadlineRef.current - Date.now()) / 1000);
+            if (left <= 0) {
+                onLock();
+                deadlineRef.current = Date.now() + idleSecs * 1000;
+                setRemain(idleSecs);
+            } else {
+                // React bails out when the value is unchanged (Object.is), so a
+                // pinned (active) countdown does not re-render every 250 ms.
+                setRemain(left);
+            }
+        };
+        // Poll faster than 1 Hz so the shown second is always within ~¼s of true.
+        const iv = window.setInterval(tick, 250);
         const reset = () => {
             const now = Date.now();
             if (now - lastActivity.current > 800) {
                 lastActivity.current = now;
-                setRemain(idleSecs);
+                // Push the deadline forward on activity. The tick is the ONLY
+                // writer of `remain` (derived from this deadline) — no second
+                // writer means no full↔full-1 flicker while actively using the app.
+                deadlineRef.current = now + idleSecs * 1000;
                 // Keep the survive-refresh passphrase cache expiry in lockstep with the
                 // in-page idle countdown, so an actively-used session also survives a
                 // refresh (no-op if nothing is cached). idleSecs > 0 here (early return above).

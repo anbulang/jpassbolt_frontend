@@ -24,6 +24,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import i18n, { type AppLocale, DEFAULT_LOCALE } from './i18n';
 
 export type ThemeMode = 'light' | 'dark';
 export type Density = 'comfortable' | 'compact';
@@ -37,6 +38,8 @@ export interface Prefs {
   burnSecs: number;
   /** Seconds of inactivity before the vault auto-locks (0 = never). */
   idleSecs: number;
+  /** UI language. 'zh' (Chinese) is the default; 'en' is the fallback. */
+  locale: AppLocale;
 }
 
 const DEFAULTS: Prefs = {
@@ -47,6 +50,7 @@ const DEFAULTS: Prefs = {
   // 30 minutes — aligns the vault auto-lock window with Passbolt's ~half-hour
   // passphrase/session feel (was 300s = 5 min, which users read as "logged out").
   idleSecs: 1800,
+  locale: DEFAULT_LOCALE,
 };
 
 export const LS_PREFS = 'jpassbolt_prefs';
@@ -95,6 +99,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // and persist the whole prefs object on every change.
   useEffect(() => {
     document.documentElement.dataset.theme = prefs.theme;
+    // Keep the live i18next language in lockstep with the persisted preference,
+    // so changing the language anywhere re-renders the whole tree in that locale.
+    if (i18n.language !== prefs.locale) {
+      void i18n.changeLanguage(prefs.locale);
+    }
     try {
       localStorage.setItem(LS_PREFS, JSON.stringify(prefs));
     } catch {

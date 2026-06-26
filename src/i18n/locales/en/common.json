@@ -1,0 +1,56 @@
+{
+  "errors": {
+    "network": "Can't reach the server. Check your connection, or that the backend is running.",
+    "timeout": "The server took too long to respond. Please try again.",
+    "sessionExpired": "Your session has expired. Please sign in again.",
+    "forbidden": "You don't have permission to do that.",
+    "notFound": "Not found.",
+    "server": "The server ran into a problem. Please try again later.",
+    "unknown": "Something went wrong. Please try again."
+  },
+  "actions": {
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "retry": "Retry",
+    "copy": "Copy",
+    "copied": "Copied",
+    "close": "Close",
+    "delete": "Delete",
+    "edit": "Edit",
+    "remove": "Remove",
+    "add": "Add",
+    "search": "Search",
+    "back": "Back",
+    "next": "Next",
+    "show": "Show",
+    "hide": "Hide"
+  },
+  "state": {
+    "loading": "Loading…",
+    "empty": "Nothing here yet.",
+    "locked": "Locked",
+    "unlocked": "Unlocked",
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "lockpill": {
+    "unlocked": "Unlocked",
+    "locking": "Locking soon",
+    "clickToLock": "Click to lock now"
+  },
+  "nav": {
+    "vault": "Vault",
+    "users": "Users",
+    "groups": "Groups",
+    "settings": "Settings",
+    "encryptedMetadata": "Encrypted metadata",
+    "profile": "Profile",
+    "lockVault": "Lock vault",
+    "logout": "Sign out",
+    "toLight": "Switch to light theme",
+    "toDark": "Switch to dark theme",
+    "brand": "JPassbolt"
+  }
+}
