@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loginWithGpg } from '../auth';
-import { useKey, LS_PRIVATE_KEY } from '../crypto/KeyContext';
+import { useKey, LS_PRIVATE_KEY, LS_JWT, LS_USER } from '../crypto/KeyContext';
 import { probeMfaRequired } from '../services/mfa';
 import MfaChallenge from '../components/MfaChallenge';
 import { Vault, KeyRound, Lock, Eye, EyeOff, ShieldCheck, AlertTriangle, LogIn, Puzzle, X } from 'lucide-react';
@@ -20,7 +20,7 @@ export default function Login() {
     // render <MfaChallenge> instead of navigating; cleared on success/cancel.
     const [mfaRequired, setMfaRequired] = useState(false);
     const navigate = useNavigate();
-    const { setArmoredKeys, unlock } = useKey();
+    const { setArmoredKeys, unlock, lock } = useKey();
 
     // Detect the JPassbolt browser extension. Its content script sets
     // <html data-jpassbolt-extension="version"> on load; the SPA works fully
@@ -65,26 +65,25 @@ export default function Login() {
         try {
             // 1. 2-stage GPG login: validates the key, gets a JWT, and (in auth.ts) persists
             //    the passphrase-protected armored private key + own armored public key.
-            //    UNCHANGED — the auth/loginWithGpg contract is not touched by the MFA branch.
             await loginWithGpg(armoredPrivateKey, passphrase);
 
             // 2. Persist the armored keys into KeyContext's localStorage contract (idempotent
-            //    with auth.ts; ensures setArmoredKeys-driven state/hasStoredKey is current) and
-            //    unlock the in-memory PrivateKey with the just-entered passphrase so the session
-            //    starts UNLOCKED — no LockGate prompt right after a successful login.
+            //    with auth.ts; ensures setArmoredKeys-driven state/hasStoredKey is current).
             setArmoredKeys(armoredPrivateKey);
-            await unlock(passphrase);
 
-            // 3. Post-login MFA gate (additive, non-blocking on the happy path): probe whether
-            //    the backend requires a second factor for this session. If it does, render the
-            //    TOTP challenge instead of navigating; otherwise enter the vault as before.
+            // 3. Probe MFA BEFORE unlocking/caching. An incomplete 2FA session must NOT leave
+            //    the vault unlocked or the passphrase cached — that would auto-unlock across a
+            //    refresh into an MFA-bypassed shell. So unlock only once the session is fully
+            //    established: here for the no-MFA path, or in onVerified after MFA passes.
             const required = await probeMfaRequired();
             if (required) {
                 setMfaRequired(true);
-                return; // <MfaChallenge> takes over; onVerified() navigates to '/'.
+                return; // <MfaChallenge> takes over; onVerified() unlocks + navigates.
             }
 
-            // 4. Enter the vault (no MFA, or probe inconclusive — happy path unchanged).
+            // 4. No MFA: unlock the in-memory key (this also caches the passphrase for
+            //    survive-refresh) and enter the vault.
+            await unlock(passphrase);
             navigate('/');
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : '';
@@ -99,8 +98,25 @@ export default function Login() {
     if (mfaRequired) {
         return (
             <MfaChallenge
-                onVerified={() => navigate('/')}
+                onVerified={async () => {
+                    // 2FA passed → the session is now fully authenticated. Unlock the
+                    // vault (and cache the passphrase for survive-refresh), then enter.
+                    try {
+                        await unlock(passphrase);
+                        navigate('/');
+                    } catch (err: unknown) {
+                        setMfaRequired(false);
+                        setError(err instanceof Error ? err.message : '解锁失败，请重新登录。');
+                    }
+                }}
                 onCancel={() => {
+                    // Bailed before completing 2FA → tear down the half-established session
+                    // so nothing lingers: lock() wipes the in-memory key + passphrase cache,
+                    // and we drop the JWT/user so ProtectedRoute can't be entered. The
+                    // armored key stays (textarea stays pre-filled) for an easy re-login.
+                    lock();
+                    localStorage.removeItem(LS_JWT);
+                    localStorage.removeItem(LS_USER);
                     setMfaRequired(false);
                     setError('已取消两步验证，可重新登录。');
                 }}

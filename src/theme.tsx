@@ -56,7 +56,16 @@ function readPrefs(): Prefs {
     const raw = localStorage.getItem(LS_PREFS);
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<Prefs>;
-    return { ...DEFAULTS, ...parsed };
+    const merged = { ...DEFAULTS, ...parsed };
+    // One-time migration: the idle-lock window used to default to 300s (5 min) and
+    // the whole prefs object is persisted on every change, so existing browsers have
+    // 300 baked in. There has never been a UI to set idleSecs, so a stored 300 is
+    // always the stale old default — upgrade it to the new 30-min default. The
+    // ThemeProvider re-persists the merged value, so this self-heals after one load.
+    if (parsed.idleSecs === 300) {
+      merged.idleSecs = DEFAULTS.idleSecs;
+    }
+    return merged;
   } catch {
     return DEFAULTS;
   }

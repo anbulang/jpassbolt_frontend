@@ -269,19 +269,21 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
             setIsRestoring(false);
             return;
         }
-        let cancelled = false;
+        // No cancellation guard: didBootstrap already guarantees a single run, and
+        // KeyProvider is the root provider that never unmounts mid-session. A guard
+        // here would let StrictMode's throwaway-mount cleanup suppress the only real
+        // completion and hang the spinner forever on the failure path. So ALWAYS
+        // clear isRestoring in finally — on success LockGate passes through (isLocked
+        // is false); on failure the cache is dropped and the passphrase form shows.
         void (async () => {
             try {
                 await unlock(cached);
             } catch {
                 clearCachedPassphrase();
             } finally {
-                if (!cancelled) setIsRestoring(false);
+                setIsRestoring(false);
             }
         })();
-        return () => {
-            cancelled = true;
-        };
     }, [unlock]);
 
     const decrypt = useCallback(async (armoredMessage: string): Promise<string> => {
