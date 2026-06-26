@@ -229,6 +229,70 @@
       "distNoTotal": "{{distributed}} users"
     }
   },
+  "orgPolicies": {
+    "title": "Organization policies (admin)",
+    "subtitle": "Organization-wide email notification and password generation policies. Visible to administrators only.",
+    "emails": {
+      "title": "Email notifications",
+      "subtitle": "Control which transactional emails the server sends and how much content they include. Changes are saved instantly.",
+      "loading": "Loading email notification settings…",
+      "saved": "Email notification settings saved.",
+      "saveFailed": "Failed to save email notification settings.",
+      "groups": {
+        "content": "Email content",
+        "password": "Password events",
+        "comment": "Comment events",
+        "folder": "Folder events",
+        "group": "Group events",
+        "user": "User & admin events"
+      },
+      "toggles": {
+        "show_comment": "Include comment content in emails",
+        "show_description": "Include the description in emails",
+        "show_secret": "Include the secret in emails",
+        "show_uri": "Include the URI in emails",
+        "show_username": "Include the username in emails",
+        "send_password_create": "Notify when a password is created",
+        "send_password_update": "Notify when a password is updated",
+        "send_password_delete": "Notify when a password is deleted",
+        "send_password_share": "Notify when a password is shared",
+        "send_comment_add": "Notify when a comment is added",
+        "send_comment_update": "Notify when a comment is updated",
+        "send_comment_delete": "Notify when a comment is deleted",
+        "send_folder_create": "Notify when a folder is created",
+        "send_folder_update": "Notify when a folder is updated",
+        "send_folder_delete": "Notify when a folder is deleted",
+        "send_folder_share": "Notify when a folder is shared",
+        "send_group_delete": "Notify when a group is deleted",
+        "send_group_user_add": "Notify when a member is added to a group",
+        "send_group_user_delete": "Notify when a member is removed from a group",
+        "send_group_user_update": "Notify when a group member changes",
+        "send_group_manager_update": "Notify when a group manager changes",
+        "send_user_create": "Notify when a user is created",
+        "send_user_recover": "Notify when a user starts account recovery",
+        "send_admin_user_setup_completed": "Notify admins when a user completes setup",
+        "send_admin_user_recover_complete": "Notify admins when a user completes recovery"
+      }
+    },
+    "password": {
+      "title": "Password policy",
+      "subtitle": "Organization-wide password and passphrase generation policy. Read-only in the community edition.",
+      "readonly": "Read-only policy returned by the JPassbolt API.",
+      "loading": "Loading password policy…",
+      "loadFailed": "Failed to load password policy.",
+      "defaultGenerator": "Default generator",
+      "generator": {
+        "password": "Random password",
+        "passphrase": "Passphrase"
+      },
+      "passwordLength": "Password length",
+      "lengthValue": "{{count}} characters",
+      "passphraseWords": "Passphrase words",
+      "wordsValue": "{{count}} words",
+      "dictionaryCheck": "External dictionary / breach check",
+      "source": "Policy source"
+    }
+  },
   "common": {
     "retry": "Retry",
     "edit": "Edit",

@@ -21,10 +21,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import i18n, { type AppLocale, DEFAULT_LOCALE } from './i18n';
+import { setUserTheme } from './services/accountSettings';
 
 export type ThemeMode = 'light' | 'dark';
 export type Density = 'comfortable' | 'compact';
@@ -96,6 +98,9 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [prefs, setPrefs] = useState<Prefs>(readPrefs);
+  // Tracks the theme we last mirrored to the backend, so we sync only on a real
+  // change after the first paint — never echo the value loaded on mount.
+  const lastSyncedTheme = useRef<ThemeMode | null>(null);
 
   // Apply the theme to <html> so the token override in index.css takes effect,
   // and persist the whole prefs object on every change.
@@ -108,6 +113,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         console.error('[i18n] changeLanguage failed:', err);
       });
     }
+    // Mirror the theme to the backend account settings (Passbolt parity,
+    // cross-device), best-effort, and ONLY on a genuine change after first paint
+    // — never on mount (that would echo the loaded value back). This covers every
+    // theme entry point (rail toggle + Settings selector) from one place; the UI
+    // itself stays prefs-driven. Other pref changes (locale/density/…) leave
+    // prefs.theme unchanged, so this is a no-op for them.
+    if (lastSyncedTheme.current !== null && lastSyncedTheme.current !== prefs.theme) {
+      void setUserTheme(prefs.theme).catch((err) => {
+        if (import.meta.env.DEV) console.warn('[theme] backend sync failed:', err);
+      });
+    }
+    lastSyncedTheme.current = prefs.theme;
     try {
       localStorage.setItem(LS_PREFS, JSON.stringify(prefs));
     } catch {

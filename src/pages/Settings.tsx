@@ -43,6 +43,8 @@ import {
     AlertTriangle,
     Eye,
     EyeOff,
+    Mail,
+    KeySquare,
 } from 'lucide-react';
 import { logout } from '../auth';
 import { useKey } from '../crypto/KeyContext';
@@ -57,8 +59,10 @@ import {
 } from '../services/mfa';
 import { getServerSettings } from '../services/settings';
 import type {
+    EmailNotificationSettings,
     MfaOrgSettings,
     MfaSetupState,
+    PasswordPolicies,
     ServerSettings,
     User,
 } from '../types';
@@ -69,6 +73,11 @@ import { FullSpinner, Spinner } from '../components/Spinner';
 import { useToast } from '../components/toastContext';
 import { useTheme } from '../theme';
 import { setUserLocale } from '../services/accountSettings';
+import {
+    getEmailNotificationSettings,
+    setEmailNotificationSettings,
+    getPasswordPolicies,
+} from '../services/orgPolicies';
 import { describeApiError } from '../i18n/errors';
 import i18n, { type AppLocale } from '../i18n';
 
@@ -1116,6 +1125,11 @@ function AccountTab({ me, isAdmin }: { me: User; isAdmin: boolean }) {
             {/* Server settings card */}
             <ServerSettingsCard isAdmin={isAdmin} />
 
+            {/* Organization policies — admin only. Gated by `isAdmin` so the
+                component never mounts (and never fetches the admin-only
+                /settings/emails/notifications.json endpoint) for non-admins. */}
+            {isAdmin && <OrgPoliciesSection />}
+
             {/* Session / logout card */}
             <div className="scard">
                 <div className="srow">
@@ -1313,6 +1327,362 @@ function ServerSettingsCard({ isAdmin }: { isAdmin: boolean }) {
                     )}
                 </>
             )}
+        </div>
+    );
+}
+
+// ===========================================================================
+// Organization policies (admin only)
+//
+// Mounted ONLY when the page's admin check passes (see AccountTab), so a
+// non-admin browser never instantiates this component and therefore never
+// issues the admin-only GET /settings/emails/notifications.json request.
+// ===========================================================================
+
+/** A notification-toggle key (one of the 25 EmailNotificationSettings flags). */
+type EmailNotifKey = keyof EmailNotificationSettings;
+
+/**
+ * The 25 toggles grouped by prefix for display. Order is stable and each key is
+ * unique, so the rendered checkbox list keys on the toggle key (never an index).
+ */
+const EMAIL_NOTIF_GROUPS: { groupKey: string; keys: EmailNotifKey[] }[] = [
+    {
+        groupKey: 'content',
+        keys: ['show_username', 'show_uri', 'show_secret', 'show_description', 'show_comment'],
+    },
+    {
+        groupKey: 'password',
+        keys: [
+            'send_password_create',
+            'send_password_update',
+            'send_password_delete',
+            'send_password_share',
+        ],
+    },
+    {
+        groupKey: 'comment',
+        keys: ['send_comment_add', 'send_comment_update', 'send_comment_delete'],
+    },
+    {
+        groupKey: 'folder',
+        keys: [
+            'send_folder_create',
+            'send_folder_update',
+            'send_folder_delete',
+            'send_folder_share',
+        ],
+    },
+    {
+        groupKey: 'group',
+        keys: [
+            'send_group_delete',
+            'send_group_user_add',
+            'send_group_user_delete',
+            'send_group_user_update',
+            'send_group_manager_update',
+        ],
+    },
+    {
+        groupKey: 'user',
+        keys: [
+            'send_user_create',
+            'send_user_recover',
+            'send_admin_user_setup_completed',
+            'send_admin_user_recover_complete',
+        ],
+    },
+];
+
+function OrgPoliciesSection() {
+    const { t } = useTranslation('settings');
+
+    return (
+        <>
+            <h2 className="stitle" style={{ marginTop: '8px' }}>
+                {t('orgPolicies.title')}
+            </h2>
+            <div className="ssub">{t('orgPolicies.subtitle')}</div>
+
+            <EmailNotificationsCard />
+            <PasswordPolicyCard />
+        </>
+    );
+}
+
+function EmailNotificationsCard() {
+    const { t } = useTranslation('settings');
+    const toast = useToast();
+
+    const [settings, setSettings] = useState<EmailNotificationSettings | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    // Per-toggle in-flight guard so a key cannot be double-submitted mid-request.
+    const [pending, setPending] = useState<Set<EmailNotifKey>>(() => new Set());
+
+    useEffect(() => {
+        const controller = new AbortController();
+        (async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const s = await getEmailNotificationSettings(controller.signal);
+                if (!controller.signal.aborted) setSettings(s);
+            } catch (err: unknown) {
+                // Ignore the synthetic abort error fired on unmount.
+                if (controller.signal.aborted) return;
+                // Read via the i18n singleton (current language at call time) so this
+                // effect does NOT depend on the hook's `t` — depending on `t` would
+                // re-run the effect on every language switch and silently re-fetch.
+                setError(describeApiError(err));
+            } finally {
+                if (!controller.signal.aborted) setLoading(false);
+            }
+        })();
+        return () => controller.abort();
+        // No `t` dep: this effect only LOADS data; error strings route through the
+        // i18n singleton inside describeApiError.
+    }, []);
+
+    const toggle = async (key: EmailNotifKey, next: boolean) => {
+        if (!settings || pending.has(key)) return;
+        const previous = settings[key];
+        // Optimistic update so the switch responds instantly.
+        setSettings({ ...settings, [key]: next });
+        setPending((p) => new Set(p).add(key));
+        try {
+            const updated = await setEmailNotificationSettings({ [key]: next });
+            setSettings(updated);
+        } catch (err: unknown) {
+            // Revert just this key on failure; surface via describeApiError.
+            setSettings((curr) => (curr ? { ...curr, [key]: previous } : curr));
+            toast.error(describeApiError(err));
+        } finally {
+            setPending((p) => {
+                const nextSet = new Set(p);
+                nextSet.delete(key);
+                return nextSet;
+            });
+        }
+    };
+
+    return (
+        <div className="scard">
+            <div className="scard-h">
+                <Mail />
+                <h3>{t('orgPolicies.emails.title')}</h3>
+            </div>
+
+            <div style={{ padding: '15px 18px' }}>
+                <div className="hint" style={{ marginBottom: 14, lineHeight: 1.5 }}>
+                    {t('orgPolicies.emails.subtitle')}
+                </div>
+
+                {loading ? (
+                    <FullSpinner label={t('orgPolicies.emails.loading')} />
+                ) : error ? (
+                    <ErrorBanner>{error}</ErrorBanner>
+                ) : settings ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        {EMAIL_NOTIF_GROUPS.map(({ groupKey, keys }) => (
+                            <fieldset
+                                key={groupKey}
+                                style={{ border: 'none', margin: 0, padding: 0, minWidth: 0 }}
+                            >
+                                <legend
+                                    style={{
+                                        fontSize: '12px',
+                                        fontWeight: 600,
+                                        color: 'var(--text-2)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.04em',
+                                        marginBottom: '8px',
+                                        padding: 0,
+                                    }}
+                                >
+                                    {t(`orgPolicies.emails.groups.${groupKey}`)}
+                                </legend>
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '8px',
+                                    }}
+                                >
+                                    {keys.map((key) => {
+                                        const inputId = `email-notif-${key}`;
+                                        return (
+                                            <label
+                                                key={key}
+                                                htmlFor={inputId}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '10px',
+                                                    fontSize: '13.5px',
+                                                    cursor: pending.has(key)
+                                                        ? 'progress'
+                                                        : 'pointer',
+                                                }}
+                                            >
+                                                <input
+                                                    id={inputId}
+                                                    type="checkbox"
+                                                    checked={settings[key]}
+                                                    disabled={pending.has(key)}
+                                                    onChange={(e) =>
+                                                        void toggle(key, e.target.checked)
+                                                    }
+                                                />
+                                                <span>
+                                                    {t(`orgPolicies.emails.toggles.${key}`)}
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </fieldset>
+                        ))}
+                    </div>
+                ) : null}
+            </div>
+        </div>
+    );
+}
+
+function PasswordPolicyCard() {
+    const { t } = useTranslation('settings');
+
+    const [policy, setPolicy] = useState<PasswordPolicies | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        (async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const p = await getPasswordPolicies(controller.signal);
+                if (!controller.signal.aborted) setPolicy(p);
+            } catch (err: unknown) {
+                if (controller.signal.aborted) return;
+                setError(describeApiError(err));
+            } finally {
+                if (!controller.signal.aborted) setLoading(false);
+            }
+        })();
+        return () => controller.abort();
+        // No `t` dep — load-only effect; see EmailNotificationsCard for rationale.
+    }, []);
+
+    const generatorLabel = (gen: string): string => {
+        if (gen === 'password' || gen === 'passphrase') {
+            return t(`orgPolicies.password.generator.${gen}`);
+        }
+        return gen;
+    };
+
+    return (
+        <div className="scard">
+            <div className="scard-h">
+                <KeySquare />
+                <h3>{t('orgPolicies.password.title')}</h3>
+            </div>
+
+            <div style={{ padding: '15px 18px 0' }}>
+                <div className="hint" style={{ lineHeight: 1.5 }}>
+                    {t('orgPolicies.password.readonly')}
+                </div>
+            </div>
+
+            {loading ? (
+                <div style={{ padding: '15px 18px' }}>
+                    <FullSpinner label={t('orgPolicies.password.loading')} />
+                </div>
+            ) : error ? (
+                <div style={{ padding: '15px 18px' }}>
+                    <ErrorBanner>{error}</ErrorBanner>
+                </div>
+            ) : policy ? (
+                <>
+                    <div className="srow">
+                        <div className="sk">
+                            <div className="label">
+                                {t('orgPolicies.password.defaultGenerator')}
+                            </div>
+                        </div>
+                        <div className="sv">
+                            <Badge variant="default">
+                                {generatorLabel(policy.default_generator)}
+                            </Badge>
+                        </div>
+                    </div>
+
+                    <div className="srow">
+                        <div className="sk">
+                            <div className="label">
+                                {t('orgPolicies.password.passwordLength')}
+                            </div>
+                        </div>
+                        <div className="sv">
+                            {t('orgPolicies.password.lengthValue', {
+                                count: policy.password_generator_settings.length,
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="srow">
+                        <div className="sk">
+                            <div className="label">
+                                {t('orgPolicies.password.passphraseWords')}
+                            </div>
+                        </div>
+                        <div className="sv">
+                            {t('orgPolicies.password.wordsValue', {
+                                count: policy.passphrase_generator_settings.words,
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="srow">
+                        <div className="sk">
+                            <div className="label">
+                                {t('orgPolicies.password.dictionaryCheck')}
+                            </div>
+                        </div>
+                        <div className="sv">
+                            <span
+                                className={`chip ${
+                                    policy.external_dictionary_check ? 'green' : 'neutral'
+                                }`}
+                            >
+                                {policy.external_dictionary_check
+                                    ? t('metadata.bool.yes')
+                                    : t('metadata.bool.no')}
+                            </span>
+                        </div>
+                    </div>
+
+                    {policy.source && (
+                        <div className="srow">
+                            <div className="sk">
+                                <div className="label">{t('orgPolicies.password.source')}</div>
+                            </div>
+                            <div
+                                className="sv"
+                                style={{
+                                    fontFamily: 'var(--mono)',
+                                    fontSize: 13,
+                                    color: 'var(--text-2)',
+                                }}
+                            >
+                                {policy.source}
+                            </div>
+                        </div>
+                    )}
+                </>
+            ) : null}
         </div>
     );
 }

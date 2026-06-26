@@ -229,6 +229,70 @@
       "distNoTotal": "{{distributed}} 位用户"
     }
   },
+  "orgPolicies": {
+    "title": "组织策略（管理员）",
+    "subtitle": "面向全组织的邮件通知与密码生成策略。这些设置仅管理员可见。",
+    "emails": {
+      "title": "邮件通知",
+      "subtitle": "控制服务器发送哪些事务性邮件，以及邮件中显示多少内容。更改将即时保存。",
+      "loading": "正在加载邮件通知设置……",
+      "saved": "邮件通知设置已保存。",
+      "saveFailed": "保存邮件通知设置失败。",
+      "groups": {
+        "content": "邮件内容",
+        "password": "密码事件",
+        "comment": "评论事件",
+        "folder": "文件夹事件",
+        "group": "群组事件",
+        "user": "用户与管理员事件"
+      },
+      "toggles": {
+        "show_comment": "在邮件中包含评论内容",
+        "show_description": "在邮件中包含描述",
+        "show_secret": "在邮件中包含密码明文",
+        "show_uri": "在邮件中包含网址",
+        "show_username": "在邮件中包含用户名",
+        "send_password_create": "创建密码时通知",
+        "send_password_update": "更新密码时通知",
+        "send_password_delete": "删除密码时通知",
+        "send_password_share": "共享密码时通知",
+        "send_comment_add": "新增评论时通知",
+        "send_comment_update": "更新评论时通知",
+        "send_comment_delete": "删除评论时通知",
+        "send_folder_create": "创建文件夹时通知",
+        "send_folder_update": "更新文件夹时通知",
+        "send_folder_delete": "删除文件夹时通知",
+        "send_folder_share": "共享文件夹时通知",
+        "send_group_delete": "删除群组时通知",
+        "send_group_user_add": "群组新增成员时通知",
+        "send_group_user_delete": "群组移除成员时通知",
+        "send_group_user_update": "群组成员变更时通知",
+        "send_group_manager_update": "群组管理员变更时通知",
+        "send_user_create": "新建用户时通知",
+        "send_user_recover": "用户发起账户恢复时通知",
+        "send_admin_user_setup_completed": "用户完成注册时通知管理员",
+        "send_admin_user_recover_complete": "用户完成恢复时通知管理员"
+      }
+    },
+    "password": {
+      "title": "密码策略",
+      "subtitle": "全组织的密码与口令生成策略。社区版为只读，无法在此修改。",
+      "readonly": "由 JPassbolt API 返回的只读策略。",
+      "loading": "正在加载密码策略……",
+      "loadFailed": "加载密码策略失败。",
+      "defaultGenerator": "默认生成器",
+      "generator": {
+        "password": "随机密码",
+        "passphrase": "口令短语"
+      },
+      "passwordLength": "密码长度",
+      "lengthValue": "{{count}} 个字符",
+      "passphraseWords": "口令单词数",
+      "wordsValue": "{{count}} 个单词",
+      "dictionaryCheck": "外部词典 / 泄露检测",
+      "source": "策略来源"
+    }
+  },
   "common": {
     "retry": "重试",
     "edit": "编辑",
