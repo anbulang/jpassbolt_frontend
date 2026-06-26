@@ -35,7 +35,9 @@ import {
 } from 'react';
 import * as openpgp from 'openpgp';
 import type { PrivateKey } from 'openpgp';
+import { useTranslation } from 'react-i18next';
 import { Lock, KeyRound, Eye, EyeOff, ShieldCheck, Unlock, AlertTriangle } from 'lucide-react';
+import i18n from '../i18n';
 import { encryptMessage } from '../gpg';
 import { readIdleSecs } from '../theme';
 import {
@@ -104,6 +106,11 @@ function errMessage(err: unknown, fallback: string): string {
     if (err instanceof Error && err.message) return err.message;
     if (typeof err === 'string' && err) return err;
     return fallback;
+}
+
+/** Localized crypto-layer message helper (uses the i18n singleton, like i18n/errors.ts). */
+function tc(key: string, opts?: Record<string, unknown>): string {
+    return i18n.t(`crypto:${key}`, opts ?? {});
 }
 
 function readStoredPrivateKey(): string | null {
@@ -193,7 +200,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
     const unlock = useCallback(async (passphrase: string) => {
         const armoredPrivateKey = readStoredPrivateKey();
         if (!armoredPrivateKey) {
-            throw new Error('No stored private key to unlock. Please log in again.');
+            throw new Error(tc('errors.noStoredKey'));
         }
 
         // Read + decrypt the private key into memory.
@@ -201,7 +208,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
         try {
             encryptedKey = await openpgp.readPrivateKey({ armoredKey: armoredPrivateKey });
         } catch (err: unknown) {
-            throw new Error(errMessage(err, 'Failed to read stored private key.'));
+            throw new Error(errMessage(err, tc('errors.readStoredKey')));
         }
 
         let decryptedKey: PrivateKey;
@@ -210,9 +217,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
             // ANYONE with access to this browser profile "unlock" with any passphrase
             // after a refresh — defeating the whole in-memory-passphrase model. Login
             // refuses such keys up front; refuse here too as a defence-in-depth guard.
-            throw new Error(
-                'Your stored key is not passphrase-protected. For your security, please log in again with a passphrase-protected key.',
-            );
+            throw new Error(tc('errors.keyNotProtected'));
         } else {
             try {
                 decryptedKey = await openpgp.decryptKey({
@@ -220,7 +225,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
                     passphrase,
                 });
             } catch {
-                throw new Error('Incorrect passphrase. Could not unlock your key.');
+                throw new Error(tc('errors.incorrectPassphrase'));
             }
         }
 
@@ -289,7 +294,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
     const decrypt = useCallback(async (armoredMessage: string): Promise<string> => {
         const privateKey = privateKeyRef.current;
         if (!privateKey) {
-            throw new Error('Vault is locked. Unlock with your passphrase to decrypt.');
+            throw new Error(tc('errors.vaultLocked'));
         }
 
         const message = await openpgp.readMessage({ armoredMessage });
@@ -300,7 +305,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
             });
             return data as string;
         } catch (err: unknown) {
-            throw new Error(errMessage(err, 'Failed to decrypt message.'));
+            throw new Error(errMessage(err, tc('errors.decryptMessage')));
         }
     }, []);
 
@@ -308,7 +313,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
         async (plaintext: string, armoredPublicKeys: string[]): Promise<string> => {
             if (!armoredPublicKeys || armoredPublicKeys.length === 0) {
                 // Guard against silent lockout: refuse to encrypt with no recipient key.
-                throw new Error('No recipient public key provided for encryption.');
+                throw new Error(tc('errors.noRecipientKey'));
             }
             // Delegate to the shared gpg.ts helper (reads keys + encrypts).
             return encryptMessage(plaintext, armoredPublicKeys);
@@ -320,9 +325,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
         async (plaintext: string): Promise<string> => {
             const pub = ownPublicKeyArmored ?? readStoredPublicKey();
             if (!pub) {
-                throw new Error(
-                    'Your own public key is unavailable. Unlock your vault before creating a secret.',
-                );
+                throw new Error(tc('errors.ownPublicKeyUnavailable'));
             }
             return encryptMessage(plaintext, [pub]);
         },
@@ -385,6 +388,7 @@ export function useKey(): KeyContextValue {
  * If already unlocked (or not authenticated), it simply renders children.
  */
 export function LockGate({ children }: { children: ReactNode }): JSX.Element | null {
+    const { t } = useTranslation('crypto');
     const { isLocked, isRestoring, hasStoredKey, unlock } = useKey();
     const [passphrase, setPassphrase] = useState('');
     const [show, setShow] = useState(false);
@@ -431,7 +435,7 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
                 : null;
             const f = u?.profile?.first_name?.trim() ?? '';
             const l = u?.profile?.last_name?.trim() ?? '';
-            const name = [f, l].filter(Boolean).join(' ') || u?.username || '账户';
+            const name = [f, l].filter(Boolean).join(' ') || u?.username || t('lock.accountFallback');
             const username = u?.username ?? '';
             let initials = `${f.charAt(0)}${l.charAt(0)}`.toUpperCase();
             if (!initials.trim()) initials = (username || 'U').slice(0, 2).toUpperCase();
@@ -440,7 +444,7 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
             for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
             return { name, username, initials, color: `oklch(0.55 0.15 ${h % 360})` };
         } catch {
-            return { name: '账户', username: '', initials: 'U', color: 'var(--accent)' };
+            return { name: t('lock.accountFallback'), username: '', initials: 'U', color: 'var(--accent)' };
         }
     })();
 
@@ -453,7 +457,7 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
             await unlock(passphrase);
             setPassphrase('');
         } catch (err: unknown) {
-            setError(errMessage(err, 'passphrase 不正确，无法解锁。'));
+            setError(errMessage(err, t('errors.incorrectPassphrase')));
         } finally {
             setBusy(false);
         }
@@ -463,9 +467,9 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
         <div className="lock-overlay">
             <div className="lock-card">
                 <div className="lock-badge">{showSpinner ? <KeyRound size={28} /> : <Lock size={28} />}</div>
-                <h2>{isRestoring ? '正在恢复会话…' : busy ? '正在解锁密钥…' : '保险库已锁定'}</h2>
+                <h2>{isRestoring ? t('lock.titleRestoring') : busy ? t('lock.titleUnlocking') : t('lock.titleLocked')}</h2>
                 <div className="who">
-                    {isRestoring ? '用已缓存的口令在本地恢复你的会话' : '输入 passphrase 在本地解密你的私钥'}
+                    {isRestoring ? t('lock.subtitleRestoring') : t('lock.subtitleLocked')}
                 </div>
 
                 <div className="lock-id">
@@ -485,13 +489,13 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
                         </div>
                         <div className="lock-foot" style={{ marginTop: 14 }}>
                             <span className="spin-ring" />{' '}
-                            {isRestoring ? '正在用已缓存的口令恢复会话…' : '用 passphrase 解密本地私钥…'}
+                            {isRestoring ? t('lock.spinnerRestoring') : t('lock.spinnerUnlocking')}
                         </div>
                     </div>
                 ) : (
                     <form onSubmit={handleSubmit}>
                         <div className="pf-label">
-                            <KeyRound size={15} /> 输入 passphrase 解锁
+                            <KeyRound size={15} /> {t('lock.inputLabel')}
                         </div>
                         <div className={`pf-input${error ? ' err' : ''}`}>
                             <Lock size={17} />
@@ -522,10 +526,10 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
                             style={{ width: '100%', height: 44, marginTop: 16, fontSize: 14 }}
                             disabled={passphrase.length === 0}
                         >
-                            <Unlock size={16} /> 解锁
+                            <Unlock size={16} /> {t('lock.submit')}
                         </button>
                         <div className="lock-foot">
-                            <ShieldCheck size={13} /> passphrase 仅用于本地解密，永不上传
+                            <ShieldCheck size={13} /> {t('lock.note')}
                         </div>
                     </form>
                 )}

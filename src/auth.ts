@@ -9,6 +9,8 @@ import {
     LS_PUBLIC_KEY,
 } from './crypto/KeyContext';
 import { clearCachedPassphrase } from './crypto/passphraseCache';
+import i18n from './i18n';
+import { describeApiError } from './i18n/errors';
 import type { User } from './types';
 
 /** Narrow an unknown thrown value into a best-effort axios-ish error shape for messaging. */
@@ -88,7 +90,7 @@ export async function loginWithGpg(
     try {
         fingerprint = await extractKeyId(armoredPrivateKey);
     } catch {
-        throw new Error('Invalid GPG Private Key.');
+        throw new Error(i18n.t('shell:auth.invalidKey'));
     }
 
     // Refuse an UNPROTECTED (passphrase-less) private key. The whole
@@ -99,16 +101,18 @@ export async function loginWithGpg(
     try {
         const parsed = await openpgp.readPrivateKey({ armoredKey: armoredPrivateKey });
         if (parsed.isDecrypted()) {
-            throw new Error(
-                'This private key is not protected by a passphrase. For your security, JPassbolt requires a passphrase-protected key. Add a passphrase to your key and try again.',
-            );
+            // Tag our explicit refusal so the catch below can distinguish it from a
+            // parse failure even though the message is now localized.
+            const refusal = new Error(i18n.t('shell:auth.keyNotProtected'));
+            (refusal as Error & { keyNotProtected?: boolean }).keyNotProtected = true;
+            throw refusal;
         }
     } catch (err: unknown) {
         // Re-throw our explicit refusal; treat any parse failure as an invalid key.
-        if (err instanceof Error && err.message.startsWith('This private key is not protected')) {
+        if (err instanceof Error && (err as Error & { keyNotProtected?: boolean }).keyNotProtected) {
             throw err;
         }
-        throw new Error('Invalid GPG Private Key.');
+        throw new Error(i18n.t('shell:auth.invalidKey'));
     }
 
     // Stage 1: Request authentication challenge
@@ -124,15 +128,15 @@ export async function loginWithGpg(
     } catch (err: unknown) {
         const e = asApiError(err);
         if (e.response?.status === 404) {
-            throw new Error('User not found for the provided GPG Key.');
+            throw new Error(i18n.t('shell:auth.userNotFound'));
         }
-        throw new Error('GPG Auth Stage 1 Failed: ' + (e.response?.data?.header?.message || e.message));
+        throw new Error(i18n.t('shell:auth.stage1Failed', { detail: describeApiError(err) }));
     }
 
     // The encrypted nonce is returned in the custom header
     const encryptedToken = stage1Response.headers['x-gpgauth-user-auth-token'];
     if (!encryptedToken) {
-        throw new Error('Server did not return a challenge token (X-GPGAuth-User-Auth-Token header missing)');
+        throw new Error(i18n.t('shell:auth.missingChallengeToken'));
     }
 
     // Decode the URL-encoded armored PGP message. The server encodes the header
@@ -147,8 +151,8 @@ export async function loginWithGpg(
     let decryptedNonce;
     try {
         decryptedNonce = await decryptMessage(decodedToken, armoredPrivateKey, passphrase);
-    } catch (err: unknown) {
-        throw new Error(asApiError(err).message || 'Failed to decrypt the server challenge. Is your passphrase correct?');
+    } catch {
+        throw new Error(i18n.t('shell:auth.decryptChallengeFailed'));
     }
 
     // Stage 2: Return the decrypted nonce to complete authentication
@@ -163,14 +167,13 @@ export async function loginWithGpg(
             },
         });
     } catch (err: unknown) {
-        const e = asApiError(err);
-        throw new Error('GPG Auth Stage 2 Failed: ' + (e.response?.data?.header?.message || e.message));
+        throw new Error(i18n.t('shell:auth.stage2Failed', { detail: describeApiError(err) }));
     }
 
     // Extract the JWT Bearer token from the Authorization header
     const authHeader = stage2Response.headers['authorization'];
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        throw new Error('Authentication completed but no JWT token was returned in the headers.');
+        throw new Error(i18n.t('shell:auth.missingJwt'));
     }
 
     const jwt = authHeader.substring(7);

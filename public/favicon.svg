@@ -1,0 +1,17 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="JPassbolt">
+  <!-- Subtle rounded-square backdrop -->
+  <rect x="6" y="6" width="116" height="116" rx="28" fill="#2a6df4"/>
+  <!-- Vault face: rounded panel with brand-blue strokes on a light field,
+       echoing the lucide "Vault" glyph used by the SPA brand. -->
+  <rect x="24" y="24" width="80" height="80" rx="16" fill="#ffffff"/>
+  <!-- Vault dial ring -->
+  <circle cx="58" cy="64" r="22" fill="none" stroke="#2a6df4" stroke-width="6"/>
+  <!-- Keyhole inside the dial: head + stem -->
+  <circle cx="58" cy="58" r="6.5" fill="#2a6df4"/>
+  <path d="M54.5 62 L61.5 62 L63.5 76 L52.5 76 Z" fill="#2a6df4"/>
+  <!-- Corner latch accents (top-right & bottom-right), like the lucide vault dashes -->
+  <path d="M86 44 L94 44" stroke="#2a6df4" stroke-width="6" stroke-linecap="round"/>
+  <path d="M88 56 L94 50" stroke="#2a6df4" stroke-width="6" stroke-linecap="round"/>
+  <path d="M86 84 L94 84" stroke="#2a6df4" stroke-width="6" stroke-linecap="round"/>
+  <path d="M88 72 L94 78" stroke="#2a6df4" stroke-width="6" stroke-linecap="round"/>
+</svg>

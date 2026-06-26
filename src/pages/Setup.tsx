@@ -10,6 +10,7 @@
 // never touch the network. The server receives only the public key.
 
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import * as openpgp from 'openpgp';
 import {
@@ -37,9 +38,10 @@ import { loginWithGpg } from '../auth';
 import { startSetup, completeSetup } from '../services/setup';
 import { Stepper, KeyGen, ppScore, PP_LABEL, downloadRecoveryKit } from './flowHelpers';
 import KeyFileButton from '../components/KeyFileButton';
+import { describeApiError } from '../i18n/errors';
+import i18n from '../i18n';
 import type { User } from '../types';
 
-const STEPS = ['邀请', '密钥', '口令', '完成'];
 const BASE_URL = 'http://localhost:8080/api';
 
 type KeyMode = 'gen' | 'import';
@@ -50,22 +52,23 @@ function formatFingerprint(fp: string): string {
   return up.replace(/(.{4})/g, '$1 ').trim();
 }
 
-/** Best-effort error message extraction (axios envelope -> Error -> string). */
-function errMessage(err: unknown, fallback: string): string {
-  const e = err as { response?: { data?: { header?: { message?: string } } }; message?: string };
-  return e?.response?.data?.header?.message || e?.message || fallback;
-}
-
 /** Full display name from a profile, falling back to the username. */
 function fullName(user: User | null): string {
   const f = user?.profile?.first_name?.trim() ?? '';
   const l = user?.profile?.last_name?.trim() ?? '';
-  return [f, l].filter(Boolean).join(' ') || user?.username || '新成员';
+  return [f, l].filter(Boolean).join(' ') || user?.username || i18n.t('auth:setup.newMemberFallback');
 }
 
 export default function Setup() {
+  const { t } = useTranslation('auth');
   const navigate = useNavigate();
   const { setArmoredKeys, unlock } = useKey();
+  const STEPS = [
+    t('setup.steps.invite'),
+    t('setup.steps.key'),
+    t('setup.steps.passphrase'),
+    t('setup.steps.done'),
+  ];
 
   // Accept BOTH /setup/:userId/:tokenId AND /setup?user_id=...&token=...
   const params = useParams<{ userId?: string; tokenId?: string }>();
@@ -133,7 +136,7 @@ export default function Setup() {
   const acceptInvite = async () => {
     if (loading) return;
     if (!userId || !token) {
-      setError('链接无效：缺少 user_id 或 token。请使用邮件中的完整邀请链接。');
+      setError(t('setup.errors.missingLink'));
       return;
     }
     setLoading(true);
@@ -144,7 +147,7 @@ export default function Setup() {
       setInviteLoaded(true);
       setStep(1);
     } catch (err: unknown) {
-      setError(errMessage(err, '邀请链接无效或已过期，请联系管理员重新邀请。'));
+      setError(describeApiError(err) || t('setup.errors.inviteInvalid'));
     } finally {
       setLoading(false);
     }
@@ -174,7 +177,7 @@ export default function Setup() {
         setStep(3);
       } catch (err: unknown) {
         setGenerating(false);
-        setError(errMessage(err, '密钥生成失败，请重试。'));
+        setError(describeApiError(err) || t('setup.errors.genFailed'));
       }
       return;
     }
@@ -184,13 +187,11 @@ export default function Setup() {
     try {
       const armored = importArmored.trim();
       if (!armored) {
-        throw new Error('请先粘贴你的 OpenPGP 私钥（.asc）。');
+        throw new Error(t('setup.errors.missingKey'));
       }
       const parsed = await openpgp.readPrivateKey({ armoredKey: armored });
       if (parsed.isDecrypted()) {
-        throw new Error(
-          '该私钥未受 passphrase 保护。为了安全，JPassbolt 要求使用受 passphrase 保护的私钥。',
-        );
+        throw new Error(t('setup.errors.keyNotProtected'));
       }
       // Throws if the passphrase is wrong.
       await openpgp.decryptKey({ privateKey: parsed, passphrase: pf });
@@ -201,7 +202,7 @@ export default function Setup() {
       setFingerprint(fp);
       setStep(3);
     } catch (err: unknown) {
-      setError(errMessage(err, '无法用该 passphrase 解锁导入的私钥，请检查私钥与 passphrase。'));
+      setError(describeApiError(err) || t('setup.errors.unlockFailed'));
     } finally {
       setLoading(false);
     }
@@ -227,7 +228,7 @@ export default function Setup() {
       await unlock(pf);
       navigate('/');
     } catch (err: unknown) {
-      setError(errMessage(err, '激活失败，请重试或联系管理员。'));
+      setError(describeApiError(err) || t('setup.errors.activateFailed'));
     } finally {
       setLoading(false);
     }
@@ -241,7 +242,7 @@ export default function Setup() {
             <span className="lg">
               <Vault />
             </span>
-            <span className="bn">JPassbolt</span>
+            <span className="bn">{t('brand')}</span>
           </div>
           <Stepper steps={STEPS} cur={step} />
         </div>
@@ -254,16 +255,16 @@ export default function Setup() {
             >
               <Puzzle />
               <div style={{ flex: 1 }}>
-                <strong>安装 JPassbolt 浏览器扩展</strong>
+                <strong>{t('extPrompt.title')}</strong>
                 <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 2 }}>
-                  网页版可直接完成设置；安装扩展可获得跨站自动填表与更强的密钥隔离（可选）。
+                  {t('extPrompt.descSetup')}
                 </div>
               </div>
               <button
                 type="button"
                 className="pf-eye"
                 onClick={() => setExtDismissed(true)}
-                title="忽略"
+                title={t('extPrompt.dismiss')}
               >
                 <X size={16} />
               </button>
@@ -283,32 +284,32 @@ export default function Setup() {
                 <div className="flow-badge">
                   <Vault />
                 </div>
-                <h2>你被邀请加入 JPassbolt</h2>
-                <p>接受邀请后，将在本设备生成你的端到端加密密钥对。私钥永不离开此浏览器。</p>
+                <h2>{t('setup.invite.title')}</h2>
+                <p>{t('setup.invite.subtitle')}</p>
               </div>
 
               {inviteLoaded && user && (
                 <div className="invite-meta" style={{ marginBottom: 18 }}>
                   <div className="invite-line">
                     <UserIcon />
-                    <span className="k">姓名</span>
+                    <span className="k">{t('setup.invite.nameLabel')}</span>
                     <span className="v">{fullName(user)}</span>
                   </div>
                   <div className="invite-line">
                     <Mail />
-                    <span className="k">用户名</span>
+                    <span className="k">{t('setup.invite.usernameLabel')}</span>
                     <span className="v mono" style={{ fontSize: 12.5 }}>
                       {user.username}
                     </span>
                   </div>
                   <div className="invite-line">
                     <Users />
-                    <span className="k">角色</span>
+                    <span className="k">{t('setup.invite.roleLabel')}</span>
                     <span className="v">{user.role?.name ?? 'user'}</span>
                   </div>
                   <div className="invite-line">
                     <Globe />
-                    <span className="k">服务器</span>
+                    <span className="k">{t('setup.invite.serverLabel')}</span>
                     <span className="v mono" style={{ fontSize: 12.5 }}>
                       {BASE_URL}
                     </span>
@@ -324,14 +325,14 @@ export default function Setup() {
               >
                 {loading ? (
                   <>
-                    <span className="spin-ring" /> 正在校验邀请…
+                    <span className="spin-ring" /> {t('setup.invite.validating')}
                   </>
                 ) : (
-                  '接受邀请并开始'
+                  t('setup.invite.accept')
                 )}
               </button>
               <div className="flow-note">
-                <ShieldCheck /> 接受后将在本设备生成你的密钥对
+                <ShieldCheck /> {t('setup.invite.note')}
               </div>
             </>
           )}
@@ -343,8 +344,8 @@ export default function Setup() {
                 <div className="flow-badge">
                   <KeyRound />
                 </div>
-                <h2>创建你的加密身份</h2>
-                <p>你的私钥永远只存在于本设备，服务器只保存公钥。</p>
+                <h2>{t('setup.key.title')}</h2>
+                <p>{t('setup.key.subtitle')}</p>
               </div>
 
               <div
@@ -356,9 +357,9 @@ export default function Setup() {
                 </span>
                 <div className="oc-t">
                   <div className="a">
-                    生成新密钥对 <span className="recommend">推荐</span>
+                    {t('setup.key.genTitle')} <span className="recommend">{t('setup.key.genBadge')}</span>
                   </div>
-                  <div className="b">在本设备创建全新的 OpenPGP 密钥（RSA-3072），几秒即可完成。</div>
+                  <div className="b">{t('setup.key.genDesc')}</div>
                 </div>
                 <span className="oc-radio" />
               </div>
@@ -371,8 +372,8 @@ export default function Setup() {
                   <Download />
                 </span>
                 <div className="oc-t">
-                  <div className="a">导入已有密钥</div>
-                  <div className="b">已有受 passphrase 保护的 OpenPGP 私钥？粘贴 .asc 内容继续使用。</div>
+                  <div className="a">{t('setup.key.importTitle')}</div>
+                  <div className="b">{t('setup.key.importDesc')}</div>
                 </div>
                 <span className="oc-radio" />
               </div>
@@ -384,16 +385,16 @@ export default function Setup() {
                     style={{ display: 'flex', alignItems: 'center', margin: '4px 0 6px' }}
                   >
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      <KeyRound size={15} /> 粘贴或选择 .asc 私钥
+                      <KeyRound size={15} /> {t('setup.key.pasteLabel')}
                     </span>
                     <span style={{ marginLeft: 'auto' }}>
                       {/* 可选：选择本地 .asc 私钥文件填入下方文本框；仍可直接粘贴。文件仅在浏览器内读取。 */}
-                      <KeyFileButton onLoaded={(t) => setImportArmored(t)} />
+                      <KeyFileButton onLoaded={(txt) => setImportArmored(txt)} />
                     </span>
                   </div>
                   <textarea
                     className="flow-textarea"
-                    placeholder="-----BEGIN PGP PRIVATE KEY BLOCK-----"
+                    placeholder={t('setup.key.keyPlaceholder')}
                     value={importArmored}
                     onChange={(e) => setImportArmored(e.target.value)}
                     rows={6}
@@ -405,7 +406,7 @@ export default function Setup() {
 
               <div className="flow-foot">
                 <button className="btn" onClick={() => setStep(0)}>
-                  上一步
+                  {t('setup.key.prev')}
                 </button>
                 <span className="spacer" />
                 <button
@@ -413,7 +414,7 @@ export default function Setup() {
                   onClick={() => setStep(2)}
                   disabled={keyMode === 'import' && importArmored.trim().length === 0}
                 >
-                  下一步
+                  {t('setup.key.next')}
                 </button>
               </div>
             </>
@@ -426,8 +427,8 @@ export default function Setup() {
                 <div className="flow-badge">
                   <Lock />
                 </div>
-                <h2>设置 passphrase</h2>
-                <p>用于在本设备解锁私钥。它本身永不离开设备，也无法被找回。</p>
+                <h2>{t('setup.passphrase.title')}</h2>
+                <p>{t('setup.passphrase.subtitle')}</p>
               </div>
 
               {generating ? (
@@ -437,7 +438,7 @@ export default function Setup() {
                   <div className="pp-fields">
                     <div>
                       <div className="pf-label">
-                        <KeyRound size={15} /> passphrase
+                        <KeyRound size={15} /> {t('setup.passphrase.label')}
                       </div>
                       <div className="pf-input">
                         <Lock size={17} />
@@ -445,7 +446,7 @@ export default function Setup() {
                           type={show ? 'text' : 'password'}
                           autoFocus
                           value={pf}
-                          placeholder="••••••••••••"
+                          placeholder={t('setup.passphrase.placeholder')}
                           onChange={(e) => setPf(e.target.value)}
                         />
                         <button type="button" className="pf-eye" onClick={() => setShow((s) => !s)}>
@@ -461,14 +462,14 @@ export default function Setup() {
                             <i />
                           </div>
                           <div className="pp-meter-row">
-                            <span style={{ color: 'var(--text-3)' }}>强度</span>
+                            <span style={{ color: 'var(--text-3)' }}>{t('setup.passphrase.strength')}</span>
                             <span
                               style={{
                                 color: score >= 3 ? 'var(--green-text)' : 'var(--amber-text)',
                                 fontWeight: 500,
                               }}
                             >
-                              {PP_LABEL[score]}
+                              {PP_LABEL(score)}
                             </span>
                           </div>
                         </>
@@ -476,20 +477,20 @@ export default function Setup() {
                     </div>
                     <div>
                       <div className="pf-label">
-                        <Check size={15} /> 再次输入
+                        <Check size={15} /> {t('setup.passphrase.confirmLabel')}
                       </div>
                       <div className={'pf-input' + (pf2 && !match ? ' err' : '')}>
                         <Lock size={17} />
                         <input
                           type={show ? 'text' : 'password'}
                           value={pf2}
-                          placeholder="••••••••••••"
+                          placeholder={t('setup.passphrase.placeholder')}
                           onChange={(e) => setPf2(e.target.value)}
                         />
                       </div>
                       {pf2 && !match && (
                         <div className="pf-err">
-                          <AlertTriangle size={13} /> 两次输入不一致
+                          <AlertTriangle size={13} /> {t('setup.passphrase.mismatch')}
                         </div>
                       )}
                     </div>
@@ -497,7 +498,7 @@ export default function Setup() {
 
                   <div className="req-list">
                     <div className={'req' + (pf.length >= 8 ? ' ok' : '')}>
-                      <span className="rc">{pf.length >= 8 && <Check />}</span> 至少 8 个字符
+                      <span className="rc">{pf.length >= 8 && <Check />}</span> {t('setup.passphrase.reqLength')}
                     </div>
                     <div
                       className={
@@ -508,20 +509,20 @@ export default function Setup() {
                       <span className="rc">
                         {/[A-Z]/.test(pf) && /[a-z]/.test(pf) && /\d/.test(pf) && <Check />}
                       </span>{' '}
-                      含大小写字母与数字
+                      {t('setup.passphrase.reqMixed')}
                     </div>
                     <div className={'req' + (/[^A-Za-z0-9]/.test(pf) ? ' ok' : '')}>
-                      <span className="rc">{/[^A-Za-z0-9]/.test(pf) && <Check />}</span> 含符号更佳
+                      <span className="rc">{/[^A-Za-z0-9]/.test(pf) && <Check />}</span> {t('setup.passphrase.reqSymbol')}
                     </div>
                   </div>
 
                   <div className="warn-soft">
-                    <AlertTriangle /> JPassbolt 无法重置 passphrase。请务必牢记，或在下一步保存恢复套件。
+                    <AlertTriangle /> {t('setup.passphrase.warning')}
                   </div>
 
                   <div className="flow-foot">
                     <button className="btn" onClick={() => setStep(1)}>
-                      上一步
+                      {t('setup.passphrase.prev')}
                     </button>
                     <span className="spacer" />
                     <button
@@ -531,14 +532,14 @@ export default function Setup() {
                     >
                       {loading ? (
                         <>
-                          <span className="spin-ring" /> 处理中…
+                          <span className="spin-ring" /> {t('setup.passphrase.processing')}
                         </>
                       ) : keyMode === 'gen' ? (
                         <>
-                          <KeyRound size={16} /> 生成密钥
+                          <KeyRound size={16} /> {t('setup.passphrase.generateKey')}
                         </>
                       ) : (
-                        '下一步'
+                        t('setup.passphrase.next')
                       )}
                     </button>
                   </div>
@@ -554,13 +555,13 @@ export default function Setup() {
                 <div className="flow-badge green">
                   <ShieldCheck />
                 </div>
-                <h2>身份已就绪</h2>
-                <p>你的密钥已生成并在本地加密。点击进入保险库以激活账户。</p>
+                <h2>{t('setup.done.title')}</h2>
+                <p>{t('setup.done.subtitle')}</p>
               </div>
 
               <div className="done-fp">
                 <div className="dfp-l">
-                  <Fingerprint /> 你的公钥指纹
+                  <Fingerprint /> {t('setup.done.fingerprintLabel')}
                 </div>
                 <div className="dfp-v">{formatFingerprint(fingerprint)}</div>
               </div>
@@ -570,8 +571,8 @@ export default function Setup() {
                   <Download />
                 </span>
                 <div className="kr-t">
-                  <div className="a">下载恢复套件</div>
-                  <div className="b">丢失设备时用于找回访问权 · 请离线保存</div>
+                  <div className="a">{t('setup.done.kitTitle')}</div>
+                  <div className="b">{t('setup.done.kitDesc')}</div>
                 </div>
                 <button
                   className="btn sm"
@@ -582,7 +583,7 @@ export default function Setup() {
                     )
                   }
                 >
-                  <Download /> 下载
+                  <Download /> {t('setup.done.kitDownload')}
                 </button>
               </div>
 
@@ -594,16 +595,16 @@ export default function Setup() {
               >
                 {loading ? (
                   <>
-                    <span className="spin-ring" /> 正在激活…
+                    <span className="spin-ring" /> {t('setup.done.activating')}
                   </>
                 ) : (
                   <>
-                    <Unlock size={16} /> 进入保险库
+                    <Unlock size={16} /> {t('setup.done.enterVault')}
                   </>
                 )}
               </button>
               <div className="flow-note">
-                <ShieldCheck /> 私钥与 passphrase 从未离开此设备
+                <ShieldCheck /> {t('setup.done.note')}
               </div>
             </>
           )}

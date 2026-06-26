@@ -13,8 +13,10 @@
  * entirely in the browser via SecretPanel + useKey().
  */
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
 import { Plus, Search, Star, Lock, AlertTriangle, Clock, X } from 'lucide-react';
 import type { Folder, Resource, ResourceType } from '../types';
+import { describeApiError } from '../i18n/errors';
 import { deleteResource } from '../services/resources';
 import { listFolders, moveResource } from '../services/folders';
 import { getResourceTypes } from '../services/settings';
@@ -37,16 +39,6 @@ function useDebounced<T>(value: T, delay = 200): T {
     return () => window.clearTimeout(t);
   }, [value, delay]);
   return debounced;
-}
-
-function errMessage(err: unknown, fallback: string): string {
-  const status = (err as { response?: { status?: number } })?.response?.status;
-  if (status === 403) return '你没有权限执行此操作。';
-  const apiMsg = (err as { response?: { data?: { header?: { message?: string } } } })?.response?.data
-    ?.header?.message;
-  if (apiMsg) return apiMsg;
-  if (err instanceof Error && err.message) return err.message;
-  return fallback;
 }
 
 // --- small presentation helpers ---
@@ -72,6 +64,7 @@ function expiryState(iso: string | null | undefined): 'expired' | 'soon' | null 
 }
 
 export default function Vault() {
+  const { t } = useTranslation('vault');
   const toast = useToast();
   const { resources, folders, folderMembership, initialLoading, error, refetch } = useVaultData();
 
@@ -173,17 +166,17 @@ export default function Vault() {
     try {
       if (resource.favorite) {
         await removeFavorite(resource.favorite.id);
-        toast.success('已取消收藏');
+        toast.success(t('toast.favRemoved'));
       } else {
         await addFavorite(resource.id);
-        toast.success('已加入收藏');
+        toast.success(t('toast.favAdded'));
       }
       await refetch();
     } catch (err) {
       if (err instanceof FavoriteAlreadyExistsError) {
         await refetch();
       } else {
-        toast.error(errMessage(err, '更新收藏失败。'));
+        toast.error(describeApiError(err));
       }
     } finally {
       setFavBusyId(null);
@@ -195,12 +188,12 @@ export default function Vault() {
     setDeleting(true);
     try {
       await deleteResource(deleteTarget.id);
-      toast.success('凭据已删除');
+      toast.success(t('toast.deleted'));
       if (selectedId === deleteTarget.id) setSelectedId(null);
       setDeleteTarget(null);
       await refetch();
     } catch (err) {
-      toast.error(errMessage(err, '删除凭据失败。'));
+      toast.error(describeApiError(err));
     } finally {
       setDeleting(false);
     }
@@ -226,7 +219,7 @@ export default function Vault() {
     setMoveBusy(true);
     try {
       await moveResource(moving.id, target);
-      toast.success('已移动凭据');
+      toast.success(t('toast.moved'));
       // Close only after BOTH the move and the refetch finish. Closing before
       // refetch left a window where reopening the dialog showed it frozen
       // (moveBusy still true until the finally below). Holding it open keeps the
@@ -234,19 +227,19 @@ export default function Vault() {
       await refetch();
       setMoving(null);
     } catch (err) {
-      toast.error(errMessage(err, '移动凭据失败。'));
+      toast.error(describeApiError(err));
     } finally {
       setMoveBusy(false);
     }
   };
 
   const scopeName = debouncedSearch.trim()
-    ? '搜索结果'
+    ? t('scope.searchResults')
     : favoritesOnly
-      ? '收藏'
+      ? t('scope.favorites')
       : selectedFolderId
-        ? folders.find((f) => f.id === selectedFolderId)?.name ?? '文件夹'
-        : '全部凭据';
+        ? folders.find((f) => f.id === selectedFolderId)?.name ?? t('scope.folder')
+        : t('scope.all');
 
   return (
     <div className="vault">
@@ -271,12 +264,12 @@ export default function Vault() {
           <div className="searchbox">
             <Search />
             <input
-              placeholder="搜索凭据、用户名、网址…"
+              placeholder={t('search.placeholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
             {search ? (
-              <button className="star" onClick={() => setSearch('')} title="清除">
+              <button className="star" onClick={() => setSearch('')} title={t('search.clear')}>
                 <X />
               </button>
             ) : (
@@ -285,15 +278,20 @@ export default function Vault() {
           </div>
           <div className="reslist-meta">
             <span className="count">
-              <b>{filtered.length}</b> 项 · {scopeName}
+              <Trans
+                i18nKey="meta.count"
+                t={t}
+                values={{ count: filtered.length, scope: scopeName }}
+                components={[<b />]}
+              />
             </span>
             {resolving && (
               <span className="count" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <span className="spin-ring" /> 解密中…
+                <span className="spin-ring" /> {t('meta.decrypting')}
               </span>
             )}
             <button className="btn primary sm" style={{ marginLeft: 'auto' }} onClick={() => setCreating(true)}>
-              <Plus /> 新建
+              <Plus /> {t('actions.create')}
             </button>
           </div>
         </div>
@@ -304,28 +302,28 @@ export default function Vault() {
               <div className="ico">
                 <span className="spin-ring" style={{ width: 26, height: 26 }} />
               </div>
-              <h3>正在解密你的保险库…</h3>
+              <h3>{t('list.loadingVault')}</h3>
             </div>
           ) : error ? (
             <div className="empty">
               <div className="ico">
                 <AlertTriangle />
               </div>
-              <h3>加载失败</h3>
+              <h3>{t('list.loadFailed')}</h3>
               <p>{error}</p>
             </div>
           ) : filtered.length === 0 ? (
             <div className="empty">
               <div className="ico">{search ? <Search /> : <Lock />}</div>
-              <h3>{search ? '没有匹配的凭据' : resources.length === 0 ? '保险库是空的' : '这里还没有凭据'}</h3>
+              <h3>{search ? t('list.noMatch') : resources.length === 0 ? t('list.emptyVault') : t('list.noResourcesYet')}</h3>
               <p>
                 {search
-                  ? `没有找到与「${search}」相关的结果，换个关键词试试。`
-                  : '点击右上角「新建」添加你的第一条凭据——它会在离开浏览器前先在本地加密。'}
+                  ? t('list.noMatchHint', { query: search })
+                  : t('list.emptyHint')}
               </p>
               {!search && (
                 <button className="btn primary sm" onClick={() => setCreating(true)}>
-                  <Plus /> 新建凭据
+                  <Plus /> {t('actions.createResource')}
                 </button>
               )}
             </div>
@@ -344,7 +342,7 @@ export default function Vault() {
                     setDraggingId(r.id);
                   }}
                   onDragEnd={() => setDraggingId(null)}
-                  title="拖到文件夹可移动"
+                  title={t('list.dragHint')}
                   style={{ opacity: draggingId === r.id ? 0.45 : 1 }}
                   onClick={() => setSelectedId(r.id)}
                 >
@@ -364,7 +362,7 @@ export default function Vault() {
                       className={`star${r.favorite ? ' on' : ''}`}
                       role="button"
                       tabIndex={0}
-                      aria-label={r.favorite ? '取消收藏' : '收藏'}
+                      aria-label={r.favorite ? t('actions.unfavorite') : t('actions.favorite')}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (favBusyId !== r.id) void toggleFavorite(r);
@@ -400,8 +398,8 @@ export default function Vault() {
             <div className="ico">
               <Lock />
             </div>
-            <h3>选择一个凭据</h3>
-            <p>从中间的列表选择一项，即可查看并按需在本地解密其密码。</p>
+            <h3>{t('panel.selectPrompt')}</h3>
+            <p>{t('panel.selectHint')}</p>
           </div>
         </div>
       )}
@@ -437,7 +435,7 @@ export default function Vault() {
       {/* Move dialog — folder change is a standalone op, separate from edit. */}
       <Modal
         open={!!moving}
-        title={moving ? `移动「${moving.name}」` : '移动凭据'}
+        title={moving ? t('move.title', { name: moving.name }) : t('move.titleFallback')}
         onClose={() => {
           if (!moveBusy) setMoving(null);
         }}
@@ -445,23 +443,23 @@ export default function Vault() {
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setMoving(null)} disabled={moveBusy}>
-              取消
+              {t('common:actions.cancel')}
             </button>
             <button className="btn btn-primary" onClick={() => void confirmMove()} disabled={moveBusy}>
-              {moveBusy ? '移动中…' : '移动'}
+              {moveBusy ? t('move.moving') : t('move.move')}
             </button>
           </>
         }
       >
         <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="form-label">目标文件夹</label>
+          <label className="form-label">{t('move.targetFolder')}</label>
           <select
             className="form-control"
             value={moveTarget}
             onChange={(e) => setMoveTarget(e.target.value)}
             disabled={moveBusy}
           >
-            <option value="">无文件夹（根目录）</option>
+            <option value="">{t('move.noFolder')}</option>
             {moveFolderOptions.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.name}
@@ -474,14 +472,17 @@ export default function Vault() {
       {/* Delete confirmation */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除凭据"
+        title={t('delete.title')}
         message={
-          <>
-            删除 <strong>{deleteTarget?.name}</strong>？这会对所有共享对象一并移除。你必须是该凭据的拥有者。
-          </>
+          <Trans
+            i18nKey="delete.message"
+            t={t}
+            values={{ name: deleteTarget?.name ?? '' }}
+            components={[<span />, <strong />]}
+          />
         }
-        confirmLabel="删除"
-        cancelLabel="取消"
+        confirmLabel={t('common:actions.delete')}
+        cancelLabel={t('common:actions.cancel')}
         danger
         loading={deleting}
         onConfirm={confirmDelete}

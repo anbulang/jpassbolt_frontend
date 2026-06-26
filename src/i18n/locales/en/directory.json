@@ -1,0 +1,213 @@
+{
+  "users": {
+    "status": {
+      "disabled": "Disabled",
+      "active": "Active",
+      "pending": "Pending"
+    },
+    "role": {
+      "admin": "Admin",
+      "member": "Member"
+    },
+    "head": {
+      "title": "Users",
+      "subtitleAdmin": "{{count}} members · Manage the people in your organization",
+      "subtitleMember": "{{count}} members · People in your organization"
+    },
+    "invite": "Invite user",
+    "toolbar": {
+      "searchPlaceholder": "Search by name, username, or email…",
+      "searchAria": "Search users",
+      "activeOnly": "Active users only"
+    },
+    "segment": {
+      "all": "All {{count}}",
+      "admin": "Admins {{count}}",
+      "pending": "Pending {{count}}",
+      "disabled": "Disabled {{count}}"
+    },
+    "loading": "Loading users…",
+    "empty": {
+      "title": "No users found",
+      "descSearch": "No users match your search. Try a different name or email.",
+      "descAdmin": "Invite your first teammate to get started.",
+      "descMember": "There are no other users in your organization yet."
+    },
+    "table": {
+      "user": "User",
+      "role": "Role",
+      "groups": "Groups",
+      "status": "Status"
+    },
+    "you": "You",
+    "lastLogin": "· {{date}}",
+    "actions": {
+      "editTitle": "Edit profile",
+      "editAria": "Edit {{name}}",
+      "deleteSelfTitle": "You can't delete your own account",
+      "deleteTitle": "Delete user",
+      "deleteAria": "Delete {{name}}"
+    },
+    "inviteModal": {
+      "title": "Invite user",
+      "sending": "Sending…",
+      "send": "Send invite",
+      "hint": "The invited user will receive a setup link and must create their account on their own device (generating a GPG key pair) before they can sign in. The private key never touches the server.",
+      "usernameLabel": "Username (email)",
+      "firstNameLabel": "First name",
+      "lastNameLabel": "Last name",
+      "roleLabel": "Role",
+      "roleLoading": "Loading roles…"
+    },
+    "editModal": {
+      "title": "Edit user",
+      "usernameLabel": "Username",
+      "firstNameLabel": "First name",
+      "lastNameLabel": "Last name",
+      "roleLabel": "Role",
+      "currentRole": "Current role",
+      "disableLabel": "Disable this account",
+      "disableHint": "Disabled users keep their data but can no longer sign in."
+    },
+    "viewModal": {
+      "title": "User profile",
+      "joined": "Joined",
+      "lastLogin": "Last login"
+    },
+    "deleteDialog": {
+      "title": "Delete user",
+      "ack": "Got it",
+      "checking": "Checking whether this user can be deleted…",
+      "confirmPrefix": "Are you sure you want to permanently delete ",
+      "confirmFallbackName": "this user",
+      "confirmSuffix": "? This cannot be undone, and their access will be revoked immediately."
+    },
+    "toast": {
+      "inviteSent": "Invite sent. They must complete account setup via email before they can sign in.",
+      "updated": "User updated.",
+      "deleted": "Deleted {{name}}."
+    },
+    "form": {
+      "usernameRequired": "Please enter a username (email).",
+      "roleRequired": "Please select a role."
+    },
+    "error": {
+      "load": "Failed to load the user directory.",
+      "inviteForbidden": "You don't have permission to invite users.",
+      "inviteFailed": "Failed to invite the user.",
+      "editForbidden": "You don't have permission to edit this user.",
+      "updateFailed": "Failed to update the user.",
+      "deleteForbidden": "You don't have permission to delete this user.",
+      "deleteBlocked": "This user can't be deleted right now — they are the sole owner of some shared passwords, or the only manager of a group. Please transfer ownership first.",
+      "deleteFailed": "Failed to delete the user. They may be the sole owner of some content; transfer ownership first."
+    }
+  },
+  "groups": {
+    "unknownUser": "Unknown user",
+    "loadingGroups": "Loading groups…",
+    "emptyList": {
+      "title": "No groups yet",
+      "descAdmin": "Create a group to share passwords with a set of users at once.",
+      "descMember": "You aren't a member of any group yet."
+    },
+    "newGroup": "New group",
+    "list": {
+      "heading": "Groups · {{count}}",
+      "new": "New",
+      "memberCount": "{{count}} members",
+      "members": "Members",
+      "managerTitle": "You manage this group"
+    },
+    "selectPrompt": {
+      "title": "Select a group",
+      "desc": "Pick a group on the left to view its members."
+    },
+    "detail": {
+      "memberCount": "{{count}} members",
+      "youAreManager": "You manage this group",
+      "manageTitle": "Add or remove members",
+      "members": "Members",
+      "renameTitle": "Rename group",
+      "renameAria": "Rename group",
+      "deleteTitle": "Delete group",
+      "deleteAria": "Delete group",
+      "loadingMembers": "Loading members…",
+      "emptyTitle": "No members",
+      "emptyDescManage": "Add users to this group to start sharing.",
+      "emptyDescMember": "This group has no members yet.",
+      "membersHeading": "Members",
+      "managerBadge": "Manager"
+    },
+    "createModal": {
+      "title": "New group",
+      "creating": "Creating…",
+      "create": "Create group",
+      "nameLabel": "Group name",
+      "namePlaceholder": "e.g. Engineering team",
+      "hint": "You'll be the group's first manager. You can add more members from the group detail view."
+    },
+    "renameModal": {
+      "title": "Rename group",
+      "saving": "Saving…",
+      "nameLabel": "Group name"
+    },
+    "manageModal": {
+      "title": "Manage members · {{name}}",
+      "saving": "Saving…",
+      "saveChanges": "Save changes",
+      "reencrypting": "Re-encrypting group secrets for new members…",
+      "reencryptHint": "{{progress}} · Private keys never leave each device",
+      "addMember": "Add member",
+      "searchPlaceholder": "Search users by name or username",
+      "searching": "Searching…",
+      "added": "Added",
+      "noKeyTitle": "This user hasn't finished account setup yet",
+      "noKey": "No key",
+      "managerLabelTitle": "Managers can edit members",
+      "manager": "Manager",
+      "removeTitle": "Remove member",
+      "removeAria": "Remove {{name}}",
+      "membersCount": "Members ({{count}})",
+      "new": "New",
+      "pendingRemovals": "{{count}} member(s) will be removed when you save.",
+      "footnote": "New members automatically receive a re-encrypted copy of every secret this group can access. Keep your vault unlocked while saving."
+    },
+    "deleteDialog": {
+      "title": "Delete \"{{name}}\"?",
+      "confirm": "Delete group",
+      "checking": "Checking whether this group can be safely deleted…",
+      "blockedIntro": "This group can't be deleted because it is the sole owner of the following passwords. Transfer ownership first, then try again:",
+      "warning": "Deleting this group removes it for all members and revokes the shared-password access it granted. This cannot be undone."
+    },
+    "toast": {
+      "created": "Group created.",
+      "renamed": "Group renamed.",
+      "membersUpdated": "Members updated.",
+      "deleted": "Group deleted."
+    },
+    "form": {
+      "nameRequired": "Please enter a group name."
+    },
+    "error": {
+      "loadGroups": "Failed to load groups.",
+      "loadMembers": "Failed to load group members.",
+      "forbidden": "You do not have permission to perform this action.",
+      "createFailed": "Failed to create group.",
+      "renameFailed": "Failed to rename group.",
+      "searchUsers": "Failed to search users.",
+      "vaultLocked": "Your vault is locked. Unlock with your passphrase before adding members — new members need their secrets re-encrypted.",
+      "cannotAddMembers": "Cannot add {{names}}: no public key is available, so their secrets cannot be encrypted. They must finish account setup first. No changes were made.",
+      "missingOperatorSecret": "The server did not provide your own secret for resource {{resourceId}}, so it cannot be re-encrypted for the new member. No changes were made.",
+      "recipientKeyMissing": "A recipient key went missing during encryption. No changes were made.",
+      "updateMembership": "Failed to update membership.",
+      "deleteCheck": "Cannot delete this group right now.",
+      "deleteFailed": "Failed to delete group."
+    },
+    "progress": {
+      "checkingSecrets": "Checking which secrets need re-encryption...",
+      "resolvingKeys": "Resolving recipient keys...",
+      "reencrypting": "Re-encrypting {{count}} secret(s) for new members...",
+      "savingMembership": "Saving membership..."
+    }
+  }
+}

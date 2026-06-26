@@ -35,6 +35,7 @@ import {
     type CSSProperties,
     type ReactNode,
 } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Navigate } from 'react-router-dom';
 import {
     KeyRound,
@@ -64,23 +65,7 @@ import { Badge } from '../components/Badge';
 import { EmptyState } from '../components/EmptyState';
 import { FullSpinner, Spinner } from '../components/Spinner';
 import { useToast } from '../components/toastContext';
-
-// ---------------------------------------------------------------------------
-// Error helpers (mirror Settings.tsx)
-// ---------------------------------------------------------------------------
-interface ApiErrorLike {
-    response?: { status?: number; data?: { header?: { message?: string } } };
-    message?: string;
-}
-
-function asApiError(err: unknown): ApiErrorLike {
-    return (err ?? {}) as ApiErrorLike;
-}
-
-function errMessage(err: unknown, fallback: string): string {
-    const e = asApiError(err);
-    return e.response?.data?.header?.message || e.message || fallback;
-}
+import { describeApiError } from '../i18n/errors';
 
 // ---------------------------------------------------------------------------
 // Presentation helpers
@@ -145,9 +130,11 @@ function formatFingerprint(fp: string): string {
 
 /** A read-only "yes / no" pill for boolean policy rows. */
 function BoolBadge({ value }: { value: boolean }) {
+    const { t } = useTranslation('settings');
     return (
         <Badge variant={value ? 'success' : 'muted'}>
-            {value ? <Check size={12} /> : <X size={12} />} {value ? '是' : '否'}
+            {value ? <Check size={12} /> : <X size={12} />}{' '}
+            {value ? t('metadata.bool.yes') : t('metadata.bool.no')}
         </Badge>
     );
 }
@@ -158,6 +145,7 @@ function BoolBadge({ value }: { value: boolean }) {
 type GateState = 'loading' | 'admin' | 'denied';
 
 export default function EncryptedMetadataSettings() {
+    const { t } = useTranslation('settings');
     const [gate, setGate] = useState<GateState>('loading');
 
     useEffect(() => {
@@ -180,7 +168,7 @@ export default function EncryptedMetadataSettings() {
         return (
             <div className="container animate-fade-in">
                 <div className="glass-panel" style={{ padding: '48px 20px' }}>
-                    <FullSpinner label="正在校验权限……" />
+                    <FullSpinner label={t('metadata.verifyingAccess')} />
                 </div>
             </div>
         );
@@ -197,6 +185,7 @@ export default function EncryptedMetadataSettings() {
 // Admin panel — loads all three data sources, renders the three sections.
 // ===========================================================================
 function AdminPanel() {
+    const { t } = useTranslation('settings');
     const [typesSettings, setTypesSettings] = useState<MetadataTypesSettings | null>(null);
     const [keysSettings, setKeysSettings] = useState<MetadataKeysSettings | null>(null);
     const [keys, setKeys] = useState<MetadataKey[]>([]);
@@ -225,7 +214,7 @@ function AdminPanel() {
                 setUserCount(null);
             }
         } catch (err: unknown) {
-            setError(errMessage(err, '加载加密元数据设置失败。'));
+            setError(describeApiError(err));
         } finally {
             setLoading(false);
         }
@@ -244,21 +233,21 @@ function AdminPanel() {
     return (
         <div className="container animate-fade-in">
             <div style={{ marginBottom: '24px' }}>
-                <h1 style={{ margin: 0, fontSize: '26px' }}>加密元数据</h1>
+                <h1 style={{ margin: 0, fontSize: '26px' }}>{t('metadata.title')}</h1>
                 <p style={{ color: 'var(--text-secondary)', margin: '6px 0 0' }}>
-                    用于加密（v5）资源元数据的组织策略与密钥。
+                    {t('metadata.subtitle')}
                 </p>
             </div>
 
             {loading ? (
                 <div className="glass-panel" style={{ padding: '48px 20px' }}>
-                    <FullSpinner label="正在加载加密元数据设置……" />
+                    <FullSpinner label={t('metadata.loading')} />
                 </div>
             ) : error ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <ErrorBanner>{error}</ErrorBanner>
                     <button type="button" className="btn btn-secondary" onClick={() => void load()}>
-                        重试
+                        {t('common:actions.retry')}
                     </button>
                 </div>
             ) : (
@@ -283,30 +272,30 @@ function AdminPanel() {
 // ===========================================================================
 // Section 1 — Metadata types policy
 // ===========================================================================
-const TYPE_ENTITIES: { key: keyof MetadataTypesSettings; label: string }[] = [
-    { key: 'default_resource_types', label: '资源' },
-    { key: 'default_folder_type', label: '文件夹' },
-    { key: 'default_tag_type', label: '标签' },
-    { key: 'default_comment_type', label: '评论' },
+const TYPE_ENTITIES: { key: keyof MetadataTypesSettings; labelKey: string }[] = [
+    { key: 'default_resource_types', labelKey: 'metadata.entities.resources' },
+    { key: 'default_folder_type', labelKey: 'metadata.entities.folders' },
+    { key: 'default_tag_type', labelKey: 'metadata.entities.tags' },
+    { key: 'default_comment_type', labelKey: 'metadata.entities.comments' },
 ];
 
-const V5_CREATE_FLAGS: { key: keyof MetadataTypesSettings; label: string }[] = [
-    { key: 'allow_creation_of_v5_resources', label: '允许创建 v5 资源' },
-    { key: 'allow_creation_of_v5_folders', label: '允许创建 v5 文件夹' },
-    { key: 'allow_creation_of_v5_tags', label: '允许创建 v5 标签' },
-    { key: 'allow_creation_of_v5_comments', label: '允许创建 v5 评论' },
+const V5_CREATE_FLAGS: { key: keyof MetadataTypesSettings; labelKey: string }[] = [
+    { key: 'allow_creation_of_v5_resources', labelKey: 'metadata.v5Create.resources' },
+    { key: 'allow_creation_of_v5_folders', labelKey: 'metadata.v5Create.folders' },
+    { key: 'allow_creation_of_v5_tags', labelKey: 'metadata.v5Create.tags' },
+    { key: 'allow_creation_of_v5_comments', labelKey: 'metadata.v5Create.comments' },
 ];
 
-const V4_CREATE_FLAGS: { key: keyof MetadataTypesSettings; label: string }[] = [
-    { key: 'allow_creation_of_v4_resources', label: '允许创建 v4 资源' },
-    { key: 'allow_creation_of_v4_folders', label: '允许创建 v4 文件夹' },
-    { key: 'allow_creation_of_v4_tags', label: '允许创建 v4 标签' },
-    { key: 'allow_creation_of_v4_comments', label: '允许创建 v4 评论' },
+const V4_CREATE_FLAGS: { key: keyof MetadataTypesSettings; labelKey: string }[] = [
+    { key: 'allow_creation_of_v4_resources', labelKey: 'metadata.v4Create.resources' },
+    { key: 'allow_creation_of_v4_folders', labelKey: 'metadata.v4Create.folders' },
+    { key: 'allow_creation_of_v4_tags', labelKey: 'metadata.v4Create.tags' },
+    { key: 'allow_creation_of_v4_comments', labelKey: 'metadata.v4Create.comments' },
 ];
 
-const MIGRATION_FLAGS: { key: keyof MetadataTypesSettings; label: string }[] = [
-    { key: 'allow_v4_v5_upgrade', label: '允许 v4 → v5 升级' },
-    { key: 'allow_v5_v4_downgrade', label: '允许 v5 → v4 降级' },
+const MIGRATION_FLAGS: { key: keyof MetadataTypesSettings; labelKey: string }[] = [
+    { key: 'allow_v4_v5_upgrade', labelKey: 'metadata.migration.upgrade' },
+    { key: 'allow_v5_v4_downgrade', labelKey: 'metadata.migration.downgrade' },
 ];
 
 /** The boolean fields that imply v5 is in use (blocked without an active key). */
@@ -327,6 +316,7 @@ function TypesPolicySection({
     hasActiveKey: boolean;
     onSaved: (next: MetadataTypesSettings) => void;
 }) {
+    const { t } = useTranslation('settings');
     const toast = useToast();
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState<MetadataTypesSettings>(settings);
@@ -361,9 +351,7 @@ function TypesPolicySection({
 
     const handleSave = async () => {
         if (blockedNoKey) {
-            setError(
-                '启用 v5 需要一个处于激活状态的组织元数据密钥，请先创建元数据密钥。',
-            );
+            setError(t('metadata.typesPolicy.blockedNoKey'));
             return;
         }
         setSaving(true);
@@ -372,11 +360,11 @@ function TypesPolicySection({
             const updated = await updateMetadataTypesSettings(draft);
             onSaved(updated);
             setEditing(false);
-            toast.success('元数据格式策略已更新。');
+            toast.success(t('metadata.typesPolicy.updated'));
         } catch (err: unknown) {
             // The backend 400s when a v5 flag is enabled without an active key —
             // surface its message verbatim instead of failing silently.
-            const msg = errMessage(err, '更新元数据格式策略失败。');
+            const msg = describeApiError(err);
             setError(msg);
             toast.error(msg);
         } finally {
@@ -388,22 +376,23 @@ function TypesPolicySection({
         <div className="glass-panel" style={{ padding: '28px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
                 <SettingsIcon size={20} color="var(--primary-color)" />
-                <h2 style={{ margin: 0, fontSize: '18px', flex: 1 }}>元数据格式策略</h2>
+                <h2 style={{ margin: 0, fontSize: '18px', flex: 1 }}>
+                    {t('metadata.typesPolicy.title')}
+                </h2>
                 {!editing && (
                     <button type="button" className="btn btn-secondary" onClick={beginEdit}>
-                        <Pencil size={16} /> 编辑
+                        <Pencil size={16} /> {t('common:actions.edit')}
                     </button>
                 )}
             </div>
             <p style={{ color: 'var(--text-secondary)', marginTop: 0, marginBottom: '20px' }}>
-                控制新建项目使用的格式，以及是否允许在组织范围内创建和迁移 v4/v5。
+                {t('metadata.typesPolicy.subtitle')}
             </p>
 
             {!hasActiveKey && (
                 <div style={{ marginBottom: '16px' }}>
                     <WarnBanner>
-                        目前尚无处于激活状态的组织元数据密钥。启用任何 v5 选项都需要一个激活的元数据密钥——
-                        在创建之前，服务器将拒绝相关更改。
+                        {t('metadata.typesPolicy.noActiveKeyWarn')}
                     </WarnBanner>
                 </div>
             )}
@@ -416,14 +405,14 @@ function TypesPolicySection({
 
             {/* Default formats per entity */}
             <h3 style={{ fontSize: '14px', margin: '0 0 10px', color: 'var(--text-secondary)' }}>
-                默认格式
+                {t('metadata.typesPolicy.defaultFormats')}
             </h3>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <tbody>
-                    {TYPE_ENTITIES.map(({ key, label }) => (
+                    {TYPE_ENTITIES.map(({ key, labelKey }) => (
                         <tr key={key} style={{ borderBottom: '1px solid var(--panel-border)' }}>
                             <td style={{ padding: '10px 12px 10px 0', color: 'var(--text-secondary)' }}>
-                                {label}
+                                {t(labelKey)}
                             </td>
                             <td style={{ padding: '10px 0', textAlign: 'right' }}>
                                 {editing ? (
@@ -454,7 +443,7 @@ function TypesPolicySection({
 
             {/* Boolean policy groups */}
             <BoolFlagGroup
-                title="v5 创建"
+                title={t('metadata.typesPolicy.groupV5Create')}
                 flags={V5_CREATE_FLAGS}
                 editing={editing}
                 saving={saving}
@@ -464,7 +453,7 @@ function TypesPolicySection({
                 disabledWhenNoKey={!hasActiveKey}
             />
             <BoolFlagGroup
-                title="v4 创建"
+                title={t('metadata.typesPolicy.groupV4Create')}
                 flags={V4_CREATE_FLAGS}
                 editing={editing}
                 saving={saving}
@@ -473,7 +462,7 @@ function TypesPolicySection({
                 onToggle={setBool}
             />
             <BoolFlagGroup
-                title="迁移"
+                title={t('metadata.typesPolicy.groupMigration')}
                 flags={MIGRATION_FLAGS}
                 editing={editing}
                 saving={saving}
@@ -493,7 +482,9 @@ function TypesPolicySection({
                         disabled={saving || blockedNoKey}
                     >
                         {saving ? <Spinner size={16} color="#fff" /> : null}
-                        {saving ? '正在保存……' : '保存策略'}
+                        {saving
+                            ? t('metadata.typesPolicy.saving')
+                            : t('metadata.typesPolicy.savePolicy')}
                     </button>
                     <button
                         type="button"
@@ -501,7 +492,7 @@ function TypesPolicySection({
                         onClick={cancelEdit}
                         disabled={saving}
                     >
-                        取消
+                        {t('common:actions.cancel')}
                     </button>
                 </div>
             )}
@@ -522,7 +513,7 @@ function BoolFlagGroup({
     disabledWhenNoKey = false,
 }: {
     title: string;
-    flags: { key: keyof MetadataTypesSettings; label: string }[];
+    flags: { key: keyof MetadataTypesSettings; labelKey: string }[];
     editing: boolean;
     saving: boolean;
     settings: MetadataTypesSettings;
@@ -532,6 +523,7 @@ function BoolFlagGroup({
     disabledKeys?: (keyof MetadataTypesSettings)[];
     disabledWhenNoKey?: boolean;
 }) {
+    const { t } = useTranslation('settings');
     // When the group itself is v5-dependent (no explicit subset), all rows gate.
     const allGate = disabledWhenNoKey && disabledKeys.length === 0;
 
@@ -542,11 +534,12 @@ function BoolFlagGroup({
             </h3>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <tbody>
-                    {flags.map(({ key, label }) => {
+                    {flags.map(({ key, labelKey }) => {
                         const gated =
                             disabledWhenNoKey && (allGate || disabledKeys.includes(key));
                         const current = settings[key] as boolean;
                         const drafted = draft[key] as boolean;
+                        const label = t(labelKey);
                         return (
                             <tr key={key} style={{ borderBottom: '1px solid var(--panel-border)' }}>
                                 <td
@@ -564,7 +557,7 @@ function BoolFlagGroup({
                                                 color: 'var(--text-muted)',
                                             }}
                                         >
-                                            （需要一个激活的元数据密钥）
+                                            {t('metadata.typesPolicy.needsActiveKey')}
                                         </span>
                                     )}
                                 </td>
@@ -600,6 +593,7 @@ function KeysSettingsSection({
     settings: MetadataKeysSettings;
     onSaved: (next: MetadataKeysSettings) => void;
 }) {
+    const { t } = useTranslation('settings');
     const toast = useToast();
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState<MetadataKeysSettings>(settings);
@@ -624,9 +618,9 @@ function KeysSettingsSection({
             const updated = await updateMetadataKeysSettings(draft);
             onSaved(updated);
             setEditing(false);
-            toast.success('元数据密钥设置已更新。');
+            toast.success(t('metadata.keysSettings.updated'));
         } catch (err: unknown) {
-            const msg = errMessage(err, '更新元数据密钥设置失败。');
+            const msg = describeApiError(err);
             setError(msg);
             toast.error(msg);
         } finally {
@@ -637,13 +631,13 @@ function KeysSettingsSection({
     const rows: { key: keyof MetadataKeysSettings; label: string; help: string }[] = [
         {
             key: 'allow_usage_of_personal_keys',
-            label: '允许使用个人密钥',
-            help: '允许个人项目的元数据使用用户自己的 GPG 密钥（user_key）加密。',
+            label: t('metadata.keysSettings.allowPersonalKeys'),
+            help: t('metadata.keysSettings.allowPersonalKeysHelp'),
         },
         {
             key: 'zero_knowledge_key_share',
-            label: '零知识密钥共享',
-            help: '在服务器始终不持有元数据密钥私钥部分的前提下共享该密钥。',
+            label: t('metadata.keysSettings.zeroKnowledge'),
+            help: t('metadata.keysSettings.zeroKnowledgeHelp'),
         },
     ];
 
@@ -651,15 +645,17 @@ function KeysSettingsSection({
         <div className="glass-panel" style={{ padding: '28px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
                 <ShieldCheck size={20} color="var(--primary-color)" />
-                <h2 style={{ margin: 0, fontSize: '18px', flex: 1 }}>元数据密钥设置</h2>
+                <h2 style={{ margin: 0, fontSize: '18px', flex: 1 }}>
+                    {t('metadata.keysSettings.title')}
+                </h2>
                 {!editing && (
                     <button type="button" className="btn btn-secondary" onClick={beginEdit}>
-                        <Pencil size={16} /> 编辑
+                        <Pencil size={16} /> {t('common:actions.edit')}
                     </button>
                 )}
             </div>
             <p style={{ color: 'var(--text-secondary)', marginTop: 0, marginBottom: '20px' }}>
-                管理元数据密钥在组织范围内的使用与共享方式。
+                {t('metadata.keysSettings.subtitle')}
             </p>
 
             {error && (
@@ -707,7 +703,9 @@ function KeysSettingsSection({
                         disabled={saving}
                     >
                         {saving ? <Spinner size={16} color="#fff" /> : null}
-                        {saving ? '正在保存……' : '保存设置'}
+                        {saving
+                            ? t('metadata.keysSettings.saving')
+                            : t('metadata.keysSettings.saveSettings')}
                     </button>
                     <button
                         type="button"
@@ -715,7 +713,7 @@ function KeysSettingsSection({
                         onClick={cancelEdit}
                         disabled={saving}
                     >
-                        取消
+                        {t('common:actions.cancel')}
                     </button>
                 </div>
             )}
@@ -726,10 +724,13 @@ function KeysSettingsSection({
 // ===========================================================================
 // Section 3 — Org metadata keys (read-only)
 // ===========================================================================
-function keyStatus(k: MetadataKey): { label: string; variant: 'success' | 'muted' | 'danger' } {
-    if (k.deleted !== null) return { label: '已删除', variant: 'danger' };
-    if (k.expired !== null) return { label: '已过期', variant: 'muted' };
-    return { label: '激活', variant: 'success' };
+function keyStatus(k: MetadataKey): {
+    labelKey: string;
+    variant: 'success' | 'muted' | 'danger';
+} {
+    if (k.deleted !== null) return { labelKey: 'metadata.orgKeys.statusDeleted', variant: 'danger' };
+    if (k.expired !== null) return { labelKey: 'metadata.orgKeys.statusExpired', variant: 'muted' };
+    return { labelKey: 'metadata.orgKeys.statusActive', variant: 'success' };
 }
 
 function OrgKeysSection({
@@ -739,32 +740,32 @@ function OrgKeysSection({
     keys: MetadataKey[];
     userCount: number | null;
 }) {
+    const { t } = useTranslation('settings');
     return (
         <div className="glass-panel" style={{ padding: '28px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
                 <KeyRound size={20} color="var(--primary-color)" />
-                <h2 style={{ margin: 0, fontSize: '18px' }}>组织元数据密钥</h2>
+                <h2 style={{ margin: 0, fontSize: '18px' }}>{t('metadata.orgKeys.title')}</h2>
             </div>
             <p style={{ color: 'var(--text-secondary)', marginTop: 0, marginBottom: '20px' }}>
-                用于加密资源元数据的共享密钥。分发情况显示有多少用户持有每个密钥私钥部分的加密副本。
-                此处暂不支持创建和轮换密钥。
+                {t('metadata.orgKeys.subtitle')}
             </p>
 
             {keys.length === 0 ? (
                 <EmptyState
                     icon={KeyRound}
-                    title="暂无元数据密钥"
-                    description="尚未创建任何组织元数据密钥。在创建之前，v5 加密元数据将保持禁用。"
+                    title={t('metadata.orgKeys.emptyTitle')}
+                    description={t('metadata.orgKeys.emptyDescription')}
                     panel={false}
                 />
             ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid var(--panel-border)' }}>
-                            <th style={thStyle}>指纹</th>
-                            <th style={thStyle}>状态</th>
-                            <th style={thStyle}>创建时间</th>
-                            <th style={thStyle}>分发情况</th>
+                            <th style={thStyle}>{t('metadata.orgKeys.thFingerprint')}</th>
+                            <th style={thStyle}>{t('metadata.orgKeys.thStatus')}</th>
+                            <th style={thStyle}>{t('metadata.orgKeys.thCreated')}</th>
+                            <th style={thStyle}>{t('metadata.orgKeys.thDistribution')}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -773,8 +774,11 @@ function OrgKeysSection({
                             const distributed = k.metadata_private_keys?.length ?? 0;
                             const distLabel =
                                 userCount != null
-                                    ? `${distributed} / ${userCount} 位用户`
-                                    : `${distributed} 位用户`;
+                                    ? t('metadata.orgKeys.distWithTotal', {
+                                          distributed,
+                                          total: userCount,
+                                      })
+                                    : t('metadata.orgKeys.distNoTotal', { distributed });
                             return (
                                 <tr
                                     key={k.id}
@@ -792,7 +796,7 @@ function OrgKeysSection({
                                         {formatFingerprint(k.fingerprint)}
                                     </td>
                                     <td style={{ padding: '12px' }}>
-                                        <Badge variant={status.variant}>{status.label}</Badge>
+                                        <Badge variant={status.variant}>{t(status.labelKey)}</Badge>
                                     </td>
                                     <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>
                                         {formatDate(k.created)}

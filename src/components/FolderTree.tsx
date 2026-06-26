@@ -34,9 +34,11 @@ import {
   Vault as VaultIcon,
   Move as MoveIcon,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Modal } from './Modal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from './toastContext';
+import { describeApiError } from '../i18n/errors';
 import type { Folder, FolderNode } from '../types';
 import {
   buildFolderTree,
@@ -72,20 +74,6 @@ export const RESOURCE_DRAG_MIME = 'application/x-jpassbolt-resource-id';
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-function errMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === 'object') {
-    const anyErr = err as {
-      response?: { data?: { header?: { message?: string } } };
-      message?: string;
-    };
-    const apiMsg = anyErr.response?.data?.header?.message;
-    if (apiMsg) return apiMsg;
-    if (anyErr.message) return anyErr.message;
-  }
-  if (typeof err === 'string' && err) return err;
-  return fallback;
-}
-
 function readDroppedResourceId(e: DragEvent): string | null {
   const typed = e.dataTransfer.getData(RESOURCE_DRAG_MIME).trim();
   if (typed) return typed;
@@ -120,6 +108,7 @@ export default function FolderTree({
   onToggleFavorites,
   onResourceMoved,
 }: FolderTreeProps) {
+  const { t } = useTranslation('components');
   const toast = useToast();
   const activeId = selectedFolderId !== undefined ? selectedFolderId : (selectedId ?? null);
 
@@ -157,7 +146,7 @@ export default function FolderTree({
       const list = await listFolders({ permissions: false });
       setFolders(list);
     } catch (err) {
-      setError(errMessage(err, '加载文件夹失败。'));
+      setError(describeApiError(err));
     } finally {
       setLoading(false);
     }
@@ -193,10 +182,10 @@ export default function FolderTree({
 
   const folderName = useCallback(
     (id: string | null | undefined): string => {
-      if (!id) return '全部凭据（根）';
-      return folders.find((f) => f.id === id)?.name ?? '（未知文件夹）';
+      if (!id) return t('folderTree.allCredentialsRoot');
+      return folders.find((f) => f.id === id)?.name ?? t('folderTree.unknownFolder');
     },
-    [folders],
+    [folders, t],
   );
 
   const toggleExpand = useCallback((id: string) => {
@@ -216,19 +205,19 @@ export default function FolderTree({
       setCreateBusy(true);
       try {
         await createFolder({ name, folder_parent_id: createParent || null });
-        toast.success(`已创建文件夹「${name}」。`);
+        toast.success(t('folderTree.toast.created', { name }));
         setCreateOpen(false);
         setCreateName('');
         setCreateParent('');
         if (createParent) setExpanded((prev) => new Set(prev).add(createParent));
         await load();
       } catch (err) {
-        toast.error(errMessage(err, '创建文件夹失败。'));
+        toast.error(describeApiError(err));
       } finally {
         setCreateBusy(false);
       }
     },
-    [createName, createParent, load, toast],
+    [createName, createParent, load, toast, t],
   );
 
   const handleRename = useCallback(
@@ -243,16 +232,16 @@ export default function FolderTree({
       setRenameBusy(true);
       try {
         await renameFolder(renameTarget.id, name);
-        toast.success('文件夹已重命名。');
+        toast.success(t('folderTree.toast.renamed'));
         setRenameTarget(null);
         await load();
       } catch (err) {
-        toast.error(errMessage(err, '重命名文件夹失败。'));
+        toast.error(describeApiError(err));
       } finally {
         setRenameBusy(false);
       }
     },
-    [renameTarget, renameName, load, toast],
+    [renameTarget, renameName, load, toast, t],
   );
 
   const handleMove = useCallback(
@@ -267,17 +256,17 @@ export default function FolderTree({
       setMoveBusy(true);
       try {
         await moveFolder(moveTarget.id, newParent);
-        toast.success(`已将「${moveTarget.name}」移动到 ${folderName(newParent)}。`);
+        toast.success(t('folderTree.toast.moved', { name: moveTarget.name, destination: folderName(newParent) }));
         setMoveTarget(null);
         if (newParent) setExpanded((prev) => new Set(prev).add(newParent));
         await load();
       } catch (err) {
-        toast.error(errMessage(err, '移动文件夹失败。'));
+        toast.error(describeApiError(err));
       } finally {
         setMoveBusy(false);
       }
     },
-    [moveTarget, moveParent, folderName, load, toast],
+    [moveTarget, moveParent, folderName, load, toast, t],
   );
 
   const handleDelete = useCallback(async () => {
@@ -286,18 +275,20 @@ export default function FolderTree({
     try {
       await deleteFolder(deleteTarget.id, deleteCascade);
       toast.success(
-        deleteCascade ? `已删除「${deleteTarget.name}」及其内容。` : `已删除「${deleteTarget.name}」。`,
+        deleteCascade
+          ? t('folderTree.toast.deletedWithContents', { name: deleteTarget.name })
+          : t('folderTree.toast.deleted', { name: deleteTarget.name }),
       );
       if (activeId === deleteTarget.id) onSelect(null);
       setDeleteTarget(null);
       setDeleteCascade(false);
       await load();
     } catch (err) {
-      toast.error(errMessage(err, '删除文件夹失败。'));
+      toast.error(describeApiError(err));
     } finally {
       setDeleteBusy(false);
     }
-  }, [deleteTarget, deleteCascade, activeId, onSelect, load, toast]);
+  }, [deleteTarget, deleteCascade, activeId, onSelect, load, toast, t]);
 
   const handleResourceDrop = useCallback(
     async (e: DragEvent, destinationFolderId: string | null) => {
@@ -307,14 +298,14 @@ export default function FolderTree({
       if (!resourceId) return;
       try {
         await moveResource(resourceId, destinationFolderId);
-        toast.success(`已将凭据移动到 ${folderName(destinationFolderId)}。`);
+        toast.success(t('folderTree.toast.resourceMoved', { destination: folderName(destinationFolderId) }));
         await load();
         onResourceMoved?.();
       } catch (err) {
-        toast.error(errMessage(err, '移动凭据失败。'));
+        toast.error(describeApiError(err));
       }
     },
-    [folderName, load, onResourceMoved, toast],
+    [folderName, load, onResourceMoved, toast, t],
   );
 
   const onRowDragOver = useCallback((e: DragEvent) => {
@@ -360,7 +351,7 @@ export default function FolderTree({
               <button
                 type="button"
                 className="twirl"
-                aria-label={isOpen ? '收起' : '展开'}
+                aria-label={isOpen ? t('folderTree.collapse') : t('folderTree.expand')}
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleExpand(node.id);
@@ -373,11 +364,11 @@ export default function FolderTree({
             )}
             <FolderIcon />
             <span className="fname">{node.name}</span>
-            {node.personal === false && <Users style={{ width: 13, height: 13 }} aria-label="共享文件夹" />}
+            {node.personal === false && <Users style={{ width: 13, height: 13 }} aria-label={t('folderTree.sharedFolder')} />}
             <button
               type="button"
               className="fmenu"
-              aria-label="文件夹操作"
+              aria-label={t('folderTree.folderActions')}
               onClick={(e) => {
                 e.stopPropagation();
                 setMenuFor((cur) => (cur === node.id ? null : node.id));
@@ -395,7 +386,7 @@ export default function FolderTree({
                     setRenameName(node.name);
                   }}
                 >
-                  <Pencil /> 重命名
+                  <Pencil /> {t('folderTree.menu.rename')}
                 </button>
                 <button
                   onClick={() => {
@@ -404,7 +395,7 @@ export default function FolderTree({
                     setMoveParent(node.folder_parent_id ?? '');
                   }}
                 >
-                  <MoveIcon /> 移动…
+                  <MoveIcon /> {t('folderTree.menu.move')}
                 </button>
                 <div className="sep" />
                 <button
@@ -415,7 +406,7 @@ export default function FolderTree({
                     setDeleteCascade(false);
                   }}
                 >
-                  <Trash2 /> 删除
+                  <Trash2 /> {t('common:actions.delete')}
                 </button>
               </div>
             )}
@@ -437,6 +428,7 @@ export default function FolderTree({
       onRowDragOver,
       handleResourceDrop,
       toggleExpand,
+      t,
     ],
   );
 
@@ -459,7 +451,7 @@ export default function FolderTree({
   return (
     <div className="folders" ref={containerRef}>
       <div className="folders-scroll">
-        <div className="fsec-label">快速访问</div>
+        <div className="fsec-label">{t('folderTree.quickAccess')}</div>
 
         {/* 全部凭据 (root) — also a drop target moving resources to root. */}
         <div
@@ -478,7 +470,7 @@ export default function FolderTree({
         >
           <span style={{ width: 12, flex: '0 0 12px' }} />
           <VaultIcon />
-          <span className="fname">全部凭据</span>
+          <span className="fname">{t('folderTree.allCredentials')}</span>
         </div>
 
         {/* 收藏 — virtual node toggling the favorites filter. */}
@@ -490,16 +482,16 @@ export default function FolderTree({
           >
             <span style={{ width: 12, flex: '0 0 12px' }} />
             <Star style={favoritesOnly ? { fill: 'currentColor' } : undefined} />
-            <span className="fname">收藏</span>
+            <span className="fname">{t('folderTree.favorites')}</span>
           </div>
         )}
 
-        <div className="fsec-label">文件夹</div>
+        <div className="fsec-label">{t('folderTree.foldersLabel')}</div>
 
         {loading ? (
           <div className="frow" style={{ color: 'var(--text-3)', cursor: 'default' }}>
             <span className="spin-ring" />
-            <span className="fname">加载文件夹…</span>
+            <span className="fname">{t('folderTree.loading')}</span>
           </div>
         ) : error ? (
           <div style={{ padding: '8px 9px' }}>
@@ -512,7 +504,7 @@ export default function FolderTree({
                   onClick={() => void load()}
                   type="button"
                 >
-                  重试
+                  {t('common:actions.retry')}
                 </button>
               </div>
             </div>
@@ -520,7 +512,7 @@ export default function FolderTree({
         ) : tree.length === 0 ? (
           <div className="frow" style={{ color: 'var(--text-3)', cursor: 'default', fontStyle: 'italic' }}>
             <span style={{ width: 12, flex: '0 0 12px' }} />
-            <span className="fname">还没有文件夹</span>
+            <span className="fname">{t('folderTree.noFolders')}</span>
           </div>
         ) : (
           <div role="tree">{tree.map((node) => renderNode(node, 0))}</div>
@@ -538,27 +530,27 @@ export default function FolderTree({
         >
           <span style={{ width: 12, flex: '0 0 12px' }} />
           <Plus style={{ color: 'var(--accent)' }} />
-          <span className="fname">新建文件夹</span>
+          <span className="fname">{t('folderTree.newFolder')}</span>
         </button>
       </div>
 
       {/* ---- Create modal ---- */}
       <Modal
         open={createOpen}
-        title="新建文件夹"
+        title={t('folderTree.newFolder')}
         onClose={() => !createBusy && setCreateOpen(false)}
         maxWidth={420}
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setCreateOpen(false)} disabled={createBusy}>
-              取消
+              {t('common:actions.cancel')}
             </button>
             <button
               className="btn btn-primary"
               onClick={(e) => void handleCreate(e)}
               disabled={createBusy || createName.trim().length === 0}
             >
-              {createBusy ? '创建中…' : '创建'}
+              {createBusy ? t('folderTree.creating') : t('folderTree.create')}
             </button>
           </>
         }
@@ -566,7 +558,7 @@ export default function FolderTree({
         <form onSubmit={handleCreate}>
           <div className="form-group">
             <label className="form-label" htmlFor="ft-create-name">
-              文件夹名称
+              {t('folderTree.folderName')}
             </label>
             <input
               id="ft-create-name"
@@ -575,12 +567,12 @@ export default function FolderTree({
               value={createName}
               onChange={(e) => setCreateName(e.target.value)}
               disabled={createBusy}
-              placeholder="例如：工作"
+              placeholder={t('folderTree.namePlaceholder')}
             />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label" htmlFor="ft-create-parent">
-              上级文件夹
+              {t('folderTree.parentFolder')}
             </label>
             <select
               id="ft-create-parent"
@@ -589,7 +581,7 @@ export default function FolderTree({
               onChange={(e) => setCreateParent(e.target.value)}
               disabled={createBusy}
             >
-              <option value="">全部凭据（根）</option>
+              <option value="">{t('folderTree.allCredentialsRoot')}</option>
               {renderParentOptions().map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.label}
@@ -604,20 +596,20 @@ export default function FolderTree({
       {/* ---- Rename modal ---- */}
       <Modal
         open={renameTarget !== null}
-        title="重命名文件夹"
+        title={t('folderTree.renameFolder')}
         onClose={() => !renameBusy && setRenameTarget(null)}
         maxWidth={420}
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setRenameTarget(null)} disabled={renameBusy}>
-              取消
+              {t('common:actions.cancel')}
             </button>
             <button
               className="btn btn-primary"
               onClick={(e) => void handleRename(e)}
               disabled={renameBusy || renameName.trim().length === 0}
             >
-              {renameBusy ? '保存中…' : '保存'}
+              {renameBusy ? t('common:actions.saving') : t('common:actions.save')}
             </button>
           </>
         }
@@ -625,7 +617,7 @@ export default function FolderTree({
         <form onSubmit={handleRename}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label" htmlFor="ft-rename-name">
-              文件夹名称
+              {t('folderTree.folderName')}
             </label>
             <input
               id="ft-rename-name"
@@ -643,16 +635,16 @@ export default function FolderTree({
       {/* ---- Move modal ---- */}
       <Modal
         open={moveTarget !== null}
-        title={moveTarget ? `移动「${moveTarget.name}」` : '移动文件夹'}
+        title={moveTarget ? t('folderTree.moveTitle', { name: moveTarget.name }) : t('folderTree.moveFolder')}
         onClose={() => !moveBusy && setMoveTarget(null)}
         maxWidth={420}
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setMoveTarget(null)} disabled={moveBusy}>
-              取消
+              {t('common:actions.cancel')}
             </button>
             <button className="btn btn-primary" onClick={(e) => void handleMove(e)} disabled={moveBusy}>
-              {moveBusy ? '移动中…' : '移动'}
+              {moveBusy ? t('folderTree.moving') : t('folderTree.menu.moveAction')}
             </button>
           </>
         }
@@ -660,7 +652,7 @@ export default function FolderTree({
         <form onSubmit={handleMove}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label" htmlFor="ft-move-parent">
-              目标位置
+              {t('folderTree.destination')}
             </label>
             <select
               id="ft-move-parent"
@@ -669,7 +661,7 @@ export default function FolderTree({
               onChange={(e) => setMoveParent(e.target.value)}
               disabled={moveBusy}
             >
-              <option value="">全部凭据（根）</option>
+              <option value="">{t('folderTree.allCredentialsRoot')}</option>
               {renderParentOptions(moveTarget?.id).map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.label}
@@ -684,14 +676,16 @@ export default function FolderTree({
       {/* ---- Delete confirm ---- */}
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="删除文件夹"
+        title={t('folderTree.deleteFolder')}
         danger
         loading={deleteBusy}
-        confirmLabel="删除"
-        cancelLabel="取消"
+        confirmLabel={t('common:actions.delete')}
+        cancelLabel={t('common:actions.cancel')}
         message={
           <>
-            删除文件夹 <strong style={{ color: 'var(--text)' }}>{deleteTarget?.name}</strong>？此操作不可撤销。
+            {t('folderTree.deleteConfirm.before')}{' '}
+            <strong style={{ color: 'var(--text)' }}>{deleteTarget?.name}</strong>
+            {t('folderTree.deleteConfirm.after')}
           </>
         }
         extra={
@@ -704,7 +698,7 @@ export default function FolderTree({
               onChange={(e) => setDeleteCascade(e.target.checked)}
               disabled={deleteBusy}
             />
-            同时删除其内容（凭据与子文件夹）。关闭时，可写内容会被移动到根目录。
+            {t('folderTree.deleteCascade')}
           </label>
         }
         onConfirm={() => void handleDelete()}

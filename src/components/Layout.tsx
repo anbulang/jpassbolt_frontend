@@ -7,6 +7,7 @@ import {
     type ReactNode,
 } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
     Vault,
     Users,
@@ -26,17 +27,18 @@ import { useTheme } from '../theme';
 import { touchPassphraseCache } from '../crypto/passphraseCache';
 
 interface NavItem {
-    label: string;
+    /** i18n key (under the 'common:nav' namespace) for the tooltip label. */
+    labelKey: string;
     path: string;
     icon: ComponentType<LucideProps>;
 }
 
 /** Primary navigation, icon-only in the Aegis rail (tooltips carry the label). */
 const NAV_ITEMS: NavItem[] = [
-    { label: '保险库', path: '/', icon: Vault },
-    { label: '用户', path: '/users', icon: User },
-    { label: '群组', path: '/groups', icon: Users },
-    { label: '设置', path: '/settings', icon: Settings },
+    { labelKey: 'nav.vault', path: '/', icon: Vault },
+    { labelKey: 'nav.users', path: '/users', icon: User },
+    { labelKey: 'nav.groups', path: '/groups', icon: Users },
+    { labelKey: 'nav.settings', path: '/settings', icon: Settings },
 ];
 
 /**
@@ -45,18 +47,18 @@ const NAV_ITEMS: NavItem[] = [
  * is not a trusted role source, and the page itself also self-gates.
  */
 const ADMIN_NAV_ITEM: NavItem = {
-    label: '加密元数据',
+    labelKey: 'nav.encryptedMetadata',
     path: '/settings/encrypted-metadata',
     icon: KeyRound,
 };
 
-/** Route → topbar title (Chinese), matching the Aegis design crumbs. */
-const TITLES: Record<string, string> = {
-    '/': '保险库',
-    '/users': '用户',
-    '/groups': '群组',
-    '/settings': '设置',
-    '/settings/encrypted-metadata': '加密元数据',
+/** Route → i18n key (under 'common:nav') for the topbar title, matching the Aegis design crumbs. */
+const TITLE_KEYS: Record<string, string> = {
+    '/': 'nav.vault',
+    '/users': 'nav.users',
+    '/groups': 'nav.groups',
+    '/settings': 'nav.settings',
+    '/settings/encrypted-metadata': 'nav.encryptedMetadata',
 };
 
 interface CurrentUser {
@@ -131,20 +133,27 @@ function Ring({ pct, color }: { pct: number; color: string }) {
  * Clicking the pill locks immediately. When idleSecs is 0, auto-lock is off.
  */
 function LockPill({ idleSecs, onLock }: { idleSecs: number; onLock: () => void }) {
+    const { t } = useTranslation();
     // Drive the countdown from a single absolute deadline, NOT a decrementing
     // counter. The old counter flickered between full and full-1 (e.g.
     // 30:00 ↔ 29:59) because an activity "reset" (snap back to full) and the
     // 1 Hz tick (minus one) could both land within the same wall-clock second,
     // racing each other. Deriving `remain` from one monotonic deadline means
     // continuous activity simply pins the display at full with no down-tick.
-    const deadlineRef = useRef(Date.now() + idleSecs * 1000);
+    // Initialized to 0 (not Date.now()) so render stays pure — react-hooks/purity
+    // forbids impure calls like Date.now() during render. The effect below sets the
+    // real deadline on mount/when idleSecs changes before the first tick reads it.
+    const deadlineRef = useRef(0);
+    // Seed `remain` from idleSecs on mount. The parent keys this component by
+    // idleSecs (<LockPill key={prefs.idleSecs} .../>), so a changed setting remounts
+    // and re-seeds here — no in-effect setState needed to reset, which keeps the
+    // interval's tick callback as the only writer of `remain` (react-hooks/set-state-in-effect).
     const [remain, setRemain] = useState(idleSecs);
     const lastActivity = useRef(0);
 
     useEffect(() => {
         if (idleSecs <= 0) return; // auto-lock disabled
         deadlineRef.current = Date.now() + idleSecs * 1000;
-        setRemain(idleSecs);
         const tick = () => {
             const left = Math.ceil((deadlineRef.current - Date.now()) / 1000);
             if (left <= 0) {
@@ -186,9 +195,9 @@ function LockPill({ idleSecs, onLock }: { idleSecs: number; onLock: () => void }
 
     if (idleSecs <= 0) {
         return (
-            <button className="lockpill" onClick={onLock} title="点击立即锁定" type="button">
+            <button className="lockpill" onClick={onLock} title={t('lockpill.clickToLock')} type="button">
                 <span className="dot" />
-                <span className="lbl">已解锁</span>
+                <span className="lbl">{t('lockpill.unlocked')}</span>
             </button>
         );
     }
@@ -200,13 +209,13 @@ function LockPill({ idleSecs, onLock }: { idleSecs: number; onLock: () => void }
         <button
             className={`lockpill${warn ? ' warn' : ''}`}
             onClick={onLock}
-            title="点击立即锁定"
+            title={t('lockpill.clickToLock')}
             type="button"
         >
             <span className="ring">
                 <Ring pct={remain / idleSecs} color={warn ? 'var(--amber)' : 'var(--green)'} />
             </span>
-            <span className="lbl">{warn ? '即将锁定' : '已解锁'}</span>
+            <span className="lbl">{warn ? t('lockpill.locking') : t('lockpill.unlocked')}</span>
             <span className="time mono">
                 {mm}:{ss}
             </span>
@@ -228,6 +237,7 @@ interface LayoutProps {
  * the in-memory private key — LockGate then renders the passphrase Unlock screen.
  */
 export function Layout({ children }: LayoutProps) {
+    const { t } = useTranslation();
     const user = readCurrentUser();
     const navigate = useNavigate();
     const location = useLocation();
@@ -266,21 +276,21 @@ export function Layout({ children }: LayoutProps) {
         [isAdmin],
     );
 
-    const title = TITLES[location.pathname] ?? '保险库';
+    const title = t(TITLE_KEYS[location.pathname] ?? 'nav.vault');
     const dark = prefs.theme === 'dark';
 
     return (
         <div className={`app${prefs.density === 'compact' ? ' compact' : ''}`}>
             <div className="rail">
-                <div className="rail-logo" title="JPassbolt">
+                <div className="rail-logo" title={t('nav.brand')}>
                     <Vault />
                 </div>
-                {navItems.map(({ label, path, icon: Icon }) => (
+                {navItems.map(({ labelKey, path, icon: Icon }) => (
                     <NavLink
                         key={path}
                         to={path}
                         end={path === '/'}
-                        title={label}
+                        title={t(labelKey)}
                         className={({ isActive }) => `rail-btn${isActive ? ' active' : ''}`}
                     >
                         <Icon />
@@ -289,7 +299,7 @@ export function Layout({ children }: LayoutProps) {
                 <div className="rail-spacer" />
                 <button
                     className="rail-btn"
-                    title={dark ? '切换到浅色' : '切换到深色'}
+                    title={dark ? t('nav.toLight') : t('nav.toDark')}
                     onClick={toggleTheme}
                     type="button"
                 >
@@ -313,7 +323,7 @@ export function Layout({ children }: LayoutProps) {
                                     navigate('/settings');
                                 }}
                             >
-                                <User /> 个人资料
+                                <User /> {t('nav.profile')}
                             </button>
                             <button
                                 onClick={() => {
@@ -321,11 +331,11 @@ export function Layout({ children }: LayoutProps) {
                                     lock();
                                 }}
                             >
-                                <Lock /> 锁定保险库
+                                <Lock /> {t('nav.lockVault')}
                             </button>
                             <div className="sep" />
                             <button className="danger" onClick={logout}>
-                                <LogOut /> 退出登录
+                                <LogOut /> {t('nav.logout')}
                             </button>
                         </div>
                     )}
@@ -337,7 +347,7 @@ export function Layout({ children }: LayoutProps) {
                     <h1>{title}</h1>
                     <div className="topbar-spacer" />
                     <LockPill key={prefs.idleSecs} idleSecs={prefs.idleSecs} onLock={lock} />
-                    <button className="tb-btn tb-lock" title="立即锁定" onClick={lock} type="button">
+                    <button className="tb-btn tb-lock" title={t('shell:lock.now')} onClick={lock} type="button">
                         <Lock />
                     </button>
                 </div>

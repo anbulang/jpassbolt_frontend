@@ -7,6 +7,7 @@ import {
   type FormEvent,
 } from 'react';
 import { AxiosError } from 'axios';
+import { useTranslation } from 'react-i18next';
 import {
   Users as UsersIcon,
   UserPlus,
@@ -33,6 +34,7 @@ import { EmptyState } from '../components/EmptyState';
 import { Avatar } from '../components/Avatar';
 import { Badge, type BadgeVariant } from '../components/Badge';
 import { useToast } from '../components/toastContext';
+import { describeApiError } from '../i18n/errors';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -65,24 +67,14 @@ function displayName(user: User): string {
   return full || user.username;
 }
 
-/** Extracts a human-readable error message from an axios/backend error. */
-function errorMessage(err: unknown, fallback: string): string {
-  if (err instanceof AxiosError) {
-    const headerMsg = err.response?.data?.header?.message as string | undefined;
-    if (headerMsg) return headerMsg;
-    if (err.message) return err.message;
-  }
-  if (err instanceof Error && err.message) return err.message;
-  return fallback;
-}
-
 /** True when the error is an HTTP 403 (forbidden). */
 function isForbidden(err: unknown): boolean {
   return err instanceof AxiosError && err.response?.status === 403;
 }
 
 interface UserStatus {
-  label: string;
+  /** i18n key under directory:users.status for the chip label. */
+  labelKey: 'disabled' | 'active' | 'pending';
   /** Aegis statuschip variant: active / disabled / pending. */
   tone: 'active' | 'disabled' | 'pending';
   variant: BadgeVariant;
@@ -90,9 +82,9 @@ interface UserStatus {
 
 /** Derives the status from a user's active / disabled flags. */
 function statusOf(user: User): UserStatus {
-  if (user.disabled) return { label: '已禁用', tone: 'disabled', variant: 'danger' };
-  if (user.active) return { label: '活跃', tone: 'active', variant: 'success' };
-  return { label: '待激活', tone: 'pending', variant: 'muted' };
+  if (user.disabled) return { labelKey: 'disabled', tone: 'disabled', variant: 'danger' };
+  if (user.active) return { labelKey: 'active', tone: 'active', variant: 'success' };
+  return { labelKey: 'pending', tone: 'pending', variant: 'muted' };
 }
 
 /** Maps a role name to a badge variant (used in the profile modal). */
@@ -115,14 +107,15 @@ function formatDate(value?: string | null): string {
 
 /** Inline role badge matching the Aegis `.rolebadge` style. */
 function RoleBadge({ roleName }: { roleName?: string }) {
+  const { t } = useTranslation('directory');
   if (roleName === 'admin') {
     return (
       <span className="rolebadge admin">
-        <ShieldCheck /> 管理员
+        <ShieldCheck /> {t('users.role.admin')}
       </span>
     );
   }
-  return <span className="rolebadge">成员</span>;
+  return <span className="rolebadge">{t('users.role.member')}</span>;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,6 +135,7 @@ interface UserFormState {
 // ---------------------------------------------------------------------------
 
 export default function Users() {
+  const { t } = useTranslation('directory');
   const toast = useToast();
 
   const currentUser = useMemo(readCurrentUser, []);
@@ -210,7 +204,7 @@ export default function Users() {
       if (reqId === reqIdRef.current) setUsers(data);
     } catch (err) {
       if (reqId === reqIdRef.current) {
-        setLoadError(errorMessage(err, '加载用户目录失败。'));
+        setLoadError(describeApiError(err));
       }
     } finally {
       if (reqId === reqIdRef.current) setLoading(false);
@@ -266,11 +260,11 @@ export default function Users() {
       e.preventDefault();
       if (!form) return;
       if (!form.username.trim()) {
-        setFormError('请填写用户名（邮箱）。');
+        setFormError(t('users.form.usernameRequired'));
         return;
       }
       if (!form.role_id) {
-        setFormError('请选择一个角色。');
+        setFormError(t('users.form.roleRequired'));
         return;
       }
       setSaving(true);
@@ -285,20 +279,18 @@ export default function Users() {
       };
       try {
         await createUser(req);
-        toast.success(
-          '邀请已发送。对方需先通过邮件完成账户设置，才能登录。'
-        );
+        toast.success(t('users.toast.inviteSent'));
         closeForm();
         await fetchUsers();
       } catch (err) {
         const msg = isForbidden(err)
-          ? '你没有邀请用户的权限。'
-          : errorMessage(err, '邀请用户失败。');
+          ? t('users.error.inviteForbidden')
+          : describeApiError(err);
         setFormError(msg);
         setSaving(false);
       }
     },
-    [form, toast, closeForm, fetchUsers]
+    [form, toast, closeForm, fetchUsers, t]
   );
 
   // --- Submit edit (PUT /users/{id}.json). ---
@@ -322,18 +314,18 @@ export default function Users() {
       };
       try {
         await updateUser(editTarget.id, req);
-        toast.success('用户已更新。');
+        toast.success(t('users.toast.updated'));
         closeForm();
         await fetchUsers();
       } catch (err) {
         const msg = isForbidden(err)
-          ? '你没有编辑该用户的权限。'
-          : errorMessage(err, '更新用户失败。');
+          ? t('users.error.editForbidden')
+          : describeApiError(err);
         setFormError(msg);
         setSaving(false);
       }
     },
-    [form, editTarget, toast, closeForm, fetchUsers]
+    [form, editTarget, toast, closeForm, fetchUsers, t]
   );
 
   // --- Begin a delete: run the dry-run first to surface sole-owner conflicts. ---
@@ -346,21 +338,16 @@ export default function Users() {
       // No conflict — the ConfirmDialog will allow the delete.
     } catch (err) {
       if (isForbidden(err)) {
-        setDeleteBlocked('你没有删除该用户的权限。');
+        setDeleteBlocked(t('users.error.deleteForbidden'));
       } else {
         // A 400 here means the user solely owns content that must be
         // transferred first; surface the backend's explanation verbatim.
-        setDeleteBlocked(
-          errorMessage(
-            err,
-            '该用户暂时无法删除——他们是某些共享密码的唯一所有者，或是某个群组的唯一管理员。请先转移所有权。'
-          )
-        );
+        setDeleteBlocked(describeApiError(err));
       }
     } finally {
       setDeleteChecking(false);
     }
-  }, []);
+  }, [t]);
 
   const cancelDelete = useCallback(() => {
     setDeleteTarget(null);
@@ -375,21 +362,18 @@ export default function Users() {
     setDeleting(true);
     try {
       await deleteUser(deleteTarget.id);
-      toast.success(`已删除 ${displayName(deleteTarget)}。`);
+      toast.success(t('users.toast.deleted', { name: displayName(deleteTarget) }));
       cancelDelete();
       await fetchUsers();
     } catch (err) {
       // The backend may still reject with a transfer requirement at commit time.
       const msg = isForbidden(err)
-        ? '你没有删除该用户的权限。'
-        : errorMessage(
-            err,
-            '删除用户失败。他们可能是某些内容的唯一所有者，需先转移所有权。'
-          );
+        ? t('users.error.deleteForbidden')
+        : describeApiError(err);
       setDeleteBlocked(msg);
       setDeleting(false);
     }
-  }, [deleteTarget, deleteBlocked, toast, cancelDelete, fetchUsers]);
+  }, [deleteTarget, deleteBlocked, toast, cancelDelete, fetchUsers, t]);
 
   // -------------------------------------------------------------------------
   // Render
@@ -422,17 +406,17 @@ export default function Users() {
       {/* In-page section header ------------------------------------------- */}
       <div className="page-head">
         <div className="ph-text">
-          <h2>用户</h2>
+          <h2>{t('users.head.title')}</h2>
           <p>
             {isAdmin
-              ? `${users.length} 名成员 · 管理你组织中的成员`
-              : `${users.length} 名成员 · 你组织中的成员`}
+              ? t('users.head.subtitleAdmin', { count: users.length })
+              : t('users.head.subtitleMember', { count: users.length })}
           </p>
         </div>
         <div className="ph-spacer" />
         {isAdmin && (
           <button className="btn primary" onClick={openInvite}>
-            <UserPlus /> 邀请用户
+            <UserPlus /> {t('users.invite')}
           </button>
         )}
       </div>
@@ -443,10 +427,10 @@ export default function Users() {
           <Search />
           <input
             type="text"
-            placeholder="按姓名、用户名或邮箱搜索…"
+            placeholder={t('users.toolbar.searchPlaceholder')}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            aria-label="搜索用户"
+            aria-label={t('users.toolbar.searchAria')}
           />
         </div>
         <div className="seg">
@@ -454,25 +438,25 @@ export default function Users() {
             className={segment === 'all' ? 'on' : ''}
             onClick={() => setSegment('all')}
           >
-            全部 {counts.all}
+            {t('users.segment.all', { count: counts.all })}
           </button>
           <button
             className={segment === 'admin' ? 'on' : ''}
             onClick={() => setSegment('admin')}
           >
-            管理员 {counts.admin}
+            {t('users.segment.admin', { count: counts.admin })}
           </button>
           <button
             className={segment === 'pending' ? 'on' : ''}
             onClick={() => setSegment('pending')}
           >
-            待激活 {counts.pending}
+            {t('users.segment.pending', { count: counts.pending })}
           </button>
           <button
             className={segment === 'disabled' ? 'on' : ''}
             onClick={() => setSegment('disabled')}
           >
-            已禁用 {counts.disabled}
+            {t('users.segment.disabled', { count: counts.disabled })}
           </button>
         </div>
         {isAdmin && (
@@ -493,7 +477,7 @@ export default function Users() {
               checked={activeOnly}
               onChange={(e) => setActiveOnly(e.target.checked)}
             />
-            仅活跃用户
+            {t('users.toolbar.activeOnly')}
           </label>
         )}
       </div>
@@ -512,23 +496,23 @@ export default function Users() {
 
       {/* Body: loading / empty / table ------------------------------------ */}
       {loading ? (
-        <FullSpinner label="加载用户…" />
+        <FullSpinner label={t('users.loading')} />
       ) : visibleUsers.length === 0 ? (
         <div className="page-scroll">
           <EmptyState
             icon={UsersIcon}
-            title="未找到用户"
+            title={t('users.empty.title')}
             description={
               hasSearch
-                ? '没有匹配你搜索条件的用户。换个姓名或邮箱试试。'
+                ? t('users.empty.descSearch')
                 : isAdmin
-                  ? '邀请你的第一位同事开始使用吧。'
-                  : '你的组织中暂时还没有其他用户。'
+                  ? t('users.empty.descAdmin')
+                  : t('users.empty.descMember')
             }
             action={
               isAdmin && !hasSearch ? (
                 <button className="btn primary" onClick={openInvite}>
-                  <UserPlus /> 邀请用户
+                  <UserPlus /> {t('users.invite')}
                 </button>
               ) : undefined
             }
@@ -541,10 +525,10 @@ export default function Users() {
               className="utable-head"
               style={{ gridTemplateColumns: '2.6fr 1fr 1.4fr 1fr 44px' }}
             >
-              <div>用户</div>
-              <div>角色</div>
-              <div>群组</div>
-              <div>状态</div>
+              <div>{t('users.table.user')}</div>
+              <div>{t('users.table.role')}</div>
+              <div>{t('users.table.groups')}</div>
+              <div>{t('users.table.status')}</div>
               <div />
             </div>
             {visibleUsers.map((user) => {
@@ -574,7 +558,7 @@ export default function Users() {
                             className="chip blue"
                             style={{ padding: '1px 6px' }}
                           >
-                            你
+                            {t('users.you')}
                           </span>
                         )}
                       </div>
@@ -596,7 +580,7 @@ export default function Users() {
 
                   {/* Status cell */}
                   <div className={'statuschip ' + status.tone}>
-                    <span className="sd" /> {status.label}
+                    <span className="sd" /> {t(`users.status.${status.labelKey}`)}
                     <span
                       style={{
                         color: 'var(--text-3)',
@@ -604,7 +588,7 @@ export default function Users() {
                         marginLeft: 2,
                       }}
                     >
-                      · {formatDate(user.last_logged_in)}
+                      {t('users.lastLogin', { date: formatDate(user.last_logged_in) })}
                     </span>
                   </div>
 
@@ -620,8 +604,8 @@ export default function Users() {
                     >
                       <button
                         className="rowmenu"
-                        title="编辑资料"
-                        aria-label={`编辑 ${displayName(user)}`}
+                        title={t('users.actions.editTitle')}
+                        aria-label={t('users.actions.editAria', { name: displayName(user) })}
                         onClick={() => openEdit(user)}
                       >
                         <Pencil />
@@ -629,9 +613,11 @@ export default function Users() {
                       <button
                         className="rowmenu"
                         title={
-                          isSelf ? '无法删除自己的账户' : '删除用户'
+                          isSelf
+                            ? t('users.actions.deleteSelfTitle')
+                            : t('users.actions.deleteTitle')
                         }
-                        aria-label={`删除 ${displayName(user)}`}
+                        aria-label={t('users.actions.deleteAria', { name: displayName(user) })}
                         disabled={isSelf}
                         style={
                           isSelf
@@ -656,7 +642,7 @@ export default function Users() {
       {/* Invite modal (admin) --------------------------------------------- */}
       <Modal
         open={inviteOpen}
-        title="邀请用户"
+        title={t('users.inviteModal.title')}
         onClose={closeForm}
         footer={
           <>
@@ -665,7 +651,7 @@ export default function Users() {
               onClick={closeForm}
               disabled={saving}
             >
-              取消
+              {t('common:actions.cancel')}
             </button>
             <button
               className="btn btn-primary"
@@ -673,7 +659,7 @@ export default function Users() {
               form="invite-user-form"
               disabled={saving}
             >
-              {saving ? '发送中…' : '发送邀请'}
+              {saving ? t('users.inviteModal.sending') : t('users.inviteModal.send')}
             </button>
           </>
         }
@@ -699,12 +685,11 @@ export default function Users() {
                 lineHeight: 1.5,
               }}
             >
-              受邀用户将收到一封设置链接，并需在自己的设备上完成账户创建（生成 GPG
-              密钥对）后才能登录，私钥永不经过服务器。
+              {t('users.inviteModal.hint')}
             </p>
             <div className="form-group">
               <label className="form-label" htmlFor="invite-username">
-                用户名（邮箱）
+                {t('users.inviteModal.usernameLabel')}
               </label>
               <input
                 id="invite-username"
@@ -722,7 +707,7 @@ export default function Users() {
             <div style={{ display: 'flex', gap: '12px' }}>
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label" htmlFor="invite-first">
-                  名字
+                  {t('users.inviteModal.firstNameLabel')}
                 </label>
                 <input
                   id="invite-first"
@@ -737,7 +722,7 @@ export default function Users() {
               </div>
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label" htmlFor="invite-last">
-                  姓氏
+                  {t('users.inviteModal.lastNameLabel')}
                 </label>
                 <input
                   id="invite-last"
@@ -753,7 +738,7 @@ export default function Users() {
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" htmlFor="invite-role">
-                角色
+                {t('users.inviteModal.roleLabel')}
               </label>
               <select
                 id="invite-role"
@@ -764,7 +749,7 @@ export default function Users() {
                 }
                 required
               >
-                {roles.length === 0 && <option value="">加载角色中…</option>}
+                {roles.length === 0 && <option value="">{t('users.inviteModal.roleLoading')}</option>}
                 {roles.map((role) => (
                   <option key={role.id} value={role.id}>
                     {role.name}
@@ -779,7 +764,7 @@ export default function Users() {
       {/* Edit modal (admin) ----------------------------------------------- */}
       <Modal
         open={!!editTarget}
-        title="编辑用户"
+        title={t('users.editModal.title')}
         onClose={closeForm}
         footer={
           <>
@@ -788,7 +773,7 @@ export default function Users() {
               onClick={closeForm}
               disabled={saving}
             >
-              取消
+              {t('common:actions.cancel')}
             </button>
             <button
               className="btn btn-primary"
@@ -796,7 +781,7 @@ export default function Users() {
               form="edit-user-form"
               disabled={saving}
             >
-              {saving ? '保存中…' : '保存更改'}
+              {saving ? t('common:actions.saving') : t('common:actions.save')}
             </button>
           </>
         }
@@ -814,7 +799,7 @@ export default function Users() {
               </div>
             )}
             <div className="form-group">
-              <label className="form-label">用户名</label>
+              <label className="form-label">{t('users.editModal.usernameLabel')}</label>
               <input
                 type="text"
                 className="form-control"
@@ -826,7 +811,7 @@ export default function Users() {
             <div style={{ display: 'flex', gap: '12px' }}>
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label" htmlFor="edit-first">
-                  名字
+                  {t('users.editModal.firstNameLabel')}
                 </label>
                 <input
                   id="edit-first"
@@ -841,7 +826,7 @@ export default function Users() {
               </div>
               <div className="form-group" style={{ flex: 1 }}>
                 <label className="form-label" htmlFor="edit-last">
-                  姓氏
+                  {t('users.editModal.lastNameLabel')}
                 </label>
                 <input
                   id="edit-last"
@@ -857,7 +842,7 @@ export default function Users() {
             </div>
             <div className="form-group">
               <label className="form-label" htmlFor="edit-role">
-                角色
+                {t('users.editModal.roleLabel')}
               </label>
               <select
                 id="edit-role"
@@ -870,7 +855,7 @@ export default function Users() {
               >
                 {roles.length === 0 && (
                   <option value={form.role_id}>
-                    {editTarget.role?.name ?? '当前角色'}
+                    {editTarget.role?.name ?? t('users.editModal.currentRole')}
                   </option>
                 )}
                 {roles.map((role) => (
@@ -899,7 +884,7 @@ export default function Users() {
                   }
                 />
                 <span>
-                  禁用此账户
+                  {t('users.editModal.disableLabel')}
                   <span
                     style={{
                       display: 'block',
@@ -907,7 +892,7 @@ export default function Users() {
                       fontSize: '12px',
                     }}
                   >
-                    被禁用的用户保留其数据，但无法登录。
+                    {t('users.editModal.disableHint')}
                   </span>
                 </span>
               </label>
@@ -919,7 +904,7 @@ export default function Users() {
       {/* Read-only profile detail (non-admin) ----------------------------- */}
       <Modal
         open={!!viewTarget}
-        title="用户资料"
+        title={t('users.viewModal.title')}
         onClose={() => setViewTarget(null)}
         maxWidth={420}
         footer={
@@ -927,7 +912,7 @@ export default function Users() {
             className="btn btn-secondary"
             onClick={() => setViewTarget(null)}
           >
-            关闭
+            {t('common:actions.close')}
           </button>
         }
       >
@@ -961,10 +946,12 @@ export default function Users() {
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <Badge variant={roleVariant(viewTarget.role?.name)}>
-                {viewTarget.role?.name === 'admin' ? '管理员' : '成员'}
+                {viewTarget.role?.name === 'admin'
+                  ? t('users.role.admin')
+                  : t('users.role.member')}
               </Badge>
               <Badge variant={statusOf(viewTarget).variant}>
-                {statusOf(viewTarget).label}
+                {t(`users.status.${statusOf(viewTarget).labelKey}`)}
               </Badge>
             </div>
             <dl style={{ margin: 0, fontSize: '13px' }}>
@@ -976,7 +963,7 @@ export default function Users() {
                   borderBottom: '1px solid var(--border)',
                 }}
               >
-                <dt style={{ color: 'var(--text-2)' }}>加入时间</dt>
+                <dt style={{ color: 'var(--text-2)' }}>{t('users.viewModal.joined')}</dt>
                 <dd style={{ margin: 0 }}>{formatDate(viewTarget.created)}</dd>
               </div>
               <div
@@ -986,7 +973,7 @@ export default function Users() {
                   padding: '8px 0',
                 }}
               >
-                <dt style={{ color: 'var(--text-2)' }}>最近登录</dt>
+                <dt style={{ color: 'var(--text-2)' }}>{t('users.viewModal.lastLogin')}</dt>
                 <dd style={{ margin: 0 }}>
                   {formatDate(viewTarget.last_logged_in)}
                 </dd>
@@ -999,17 +986,17 @@ export default function Users() {
       {/* Delete confirm (admin) ------------------------------------------- */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title="删除用户"
+        title={t('users.deleteDialog.title')}
         danger={!deleteBlocked}
         loading={deleting || deleteChecking}
-        confirmLabel={deleteBlocked ? '知道了' : '删除'}
-        cancelLabel={deleteBlocked ? '关闭' : '取消'}
+        confirmLabel={deleteBlocked ? t('users.deleteDialog.ack') : t('common:actions.delete')}
+        cancelLabel={deleteBlocked ? t('common:actions.close') : t('common:actions.cancel')}
         message={
           deleteChecking ? (
             <span
               style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
             >
-              正在检查该用户是否可以删除…
+              {t('users.deleteDialog.checking')}
             </span>
           ) : deleteBlocked ? (
             <span style={{ color: 'var(--red-text)' }}>
@@ -1017,11 +1004,11 @@ export default function Users() {
             </span>
           ) : (
             <>
-              确定要永久删除{' '}
+              {t('users.deleteDialog.confirmPrefix')}
               <strong>
-                {deleteTarget ? displayName(deleteTarget) : '该用户'}
+                {deleteTarget ? displayName(deleteTarget) : t('users.deleteDialog.confirmFallbackName')}
               </strong>
-              吗？此操作不可撤销，其访问权限将立即被吊销。
+              {t('users.deleteDialog.confirmSuffix')}
             </>
           )
         }

@@ -11,6 +11,7 @@
  * secret to prefill, and re-encrypt on save. Plaintext is never logged.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type {
   Folder,
   MetadataTypesSettings,
@@ -26,6 +27,7 @@ import { getMetadataTypesSettings } from '../../services/metadata';
 import { useKey } from '../../crypto/KeyContext';
 import { useMetadataKey } from '../../crypto/MetadataKeyContext';
 import { useToast } from '../../components/toastContext';
+import { describeApiError } from '../../i18n/errors';
 import { Modal } from '../../components/Modal';
 import { PasswordField } from '../../components/PasswordField';
 import { Spinner } from '../../components/Spinner';
@@ -102,14 +104,6 @@ function passwordResourceTypes(
   return v4.length > 0 ? v4 : types.filter((t) => v4Allowed.has(t.slug));
 }
 
-function errMessage(err: unknown, fallback: string): string {
-  const apiMsg = (err as { response?: { data?: { header?: { message?: string } } } })?.response
-    ?.data?.header?.message;
-  if (apiMsg) return apiMsg;
-  if (err instanceof Error && err.message) return err.message;
-  return fallback;
-}
-
 export function ResourceFormModal({
   open,
   resource,
@@ -119,6 +113,7 @@ export function ResourceFormModal({
   onClose,
   onSaved,
 }: ResourceFormModalProps) {
+  const { t } = useTranslation('vault');
   const { encryptForSelf, ownPublicKeyArmored, isLocked, decrypt } = useKey();
   const {
     available: metadataKeyAvailable,
@@ -225,7 +220,7 @@ export function ResourceFormModal({
           description: isEncryptedDescriptionType(slug) ? content.description : f.description,
         }));
       } catch (err) {
-        if (!cancelled) setError(errMessage(err, '无法加载当前密钥以进行编辑。'));
+        if (!cancelled) setError(describeApiError(err));
       } finally {
         if (!cancelled) setPrefilling(false);
       }
@@ -327,13 +322,13 @@ export function ResourceFormModal({
     setError(null);
 
     if (!ownPublicKeyArmored) {
-      setError('您的公钥不可用。请解锁保险库后重试。');
+      setError(t('error.publicKeyUnavailable'));
       return;
     }
 
-    const selectedType = resourceTypes.find((t) => t.id === form.resourceTypeId);
+    const selectedType = resourceTypes.find((rt) => rt.id === form.resourceTypeId);
     if (!selectedType) {
-      setError('所选资源类型不可用。请刷新后重试。');
+      setError(t('error.resourceTypeUnavailable'));
       return;
     }
 
@@ -391,7 +386,7 @@ export function ResourceFormModal({
             secrets: [{ data: armoredSecret }],
           };
           await updateResource(resource.id, req);
-          toast.success('凭据已更新');
+          toast.success(t('toast.updated'));
         } else {
           // v5 create: the real name/username/uri/description live encrypted in
           // `metadata`. The v4 cleartext columns are OMITTED entirely — PHP's
@@ -406,7 +401,7 @@ export function ResourceFormModal({
             secrets: [{ data: armoredSecret }],
           };
           await createResource(req);
-          toast.success('凭据已创建');
+          toast.success(t('toast.created'));
         }
       } else if (isEdit && resource) {
         const req: ResourceUpdateRequest = {
@@ -418,7 +413,7 @@ export function ResourceFormModal({
           secrets: [{ data: armoredSecret }],
         };
         await updateResource(resource.id, req);
-        toast.success('凭据已更新');
+        toast.success(t('toast.updated'));
       } else {
         const req: ResourceCreateRequest = {
           name,
@@ -430,12 +425,12 @@ export function ResourceFormModal({
           secrets: [{ data: armoredSecret }],
         };
         await createResource(req);
-        toast.success('凭据已创建');
+        toast.success(t('toast.created'));
       }
       onSaved();
       onClose();
     } catch (err) {
-      setError(errMessage(err, '保存凭据失败。'));
+      setError(describeApiError(err));
     } finally {
       setSaving(false);
     }
@@ -444,16 +439,16 @@ export function ResourceFormModal({
   return (
     <Modal
       open={open}
-      title={isEdit ? '编辑凭据' : '新建凭据'}
+      title={isEdit ? t('form.titleEdit') : t('form.titleCreate')}
       onClose={saving ? () => {} : onClose}
       maxWidth={560}
       footer={
         <>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>
-            取消
+            {t('common:actions.cancel')}
           </button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={!canSubmit || saving}>
-            {saving ? '保存中…' : isEdit ? '保存更改' : '创建'}
+            {saving ? t('common:actions.saving') : isEdit ? t('form.saveChanges') : t('form.create')}
           </button>
         </>
       }
@@ -485,43 +480,43 @@ export function ResourceFormModal({
             fontSize: '13px',
           }}
         >
-          <Spinner size={16} /> 正在解密当前密钥…
+          <Spinner size={16} /> {t('form.decryptingCurrent')}
         </div>
       )}
 
       <div className="form-group">
-        <label className="form-label">名称 *</label>
+        <label className="form-label">{t('form.nameLabel')}</label>
         <input
           className="form-control"
           value={form.name}
           onChange={(e) => setField('name', e.target.value)}
-          placeholder="例如：GitHub"
+          placeholder={t('form.namePlaceholder')}
           autoFocus
         />
       </div>
 
       <div className="form-group">
-        <label className="form-label">用户名</label>
+        <label className="form-label">{t('form.usernameLabel')}</label>
         <input
           className="form-control"
           value={form.username}
           onChange={(e) => setField('username', e.target.value)}
-          placeholder="you@example.com"
+          placeholder={t('form.usernamePlaceholder')}
         />
       </div>
 
       <div className="form-group">
-        <label className="form-label">网址</label>
+        <label className="form-label">{t('form.uriLabel')}</label>
         <input
           className="form-control"
           value={form.uri}
           onChange={(e) => setField('uri', e.target.value)}
-          placeholder="https://example.com"
+          placeholder={t('form.uriPlaceholder')}
         />
       </div>
 
       <PasswordField
-        label="密码 *"
+        label={t('form.passwordLabel')}
         value={form.password}
         onChange={(v) => setField('password', v)}
         showStrength
@@ -529,29 +524,29 @@ export function ResourceFormModal({
       />
 
       <div className="form-group">
-        <label className="form-label">描述</label>
+        <label className="form-label">{t('form.descriptionLabel')}</label>
         <textarea
           className="form-control"
           value={form.description}
           onChange={(e) => setField('description', e.target.value)}
           placeholder={
             usesEncryptedDescription
-              ? '随密钥一起加密'
-              : '可选备注（不加密存储）'
+              ? t('form.descriptionEncryptedPlaceholder')
+              : t('form.descriptionCleartextPlaceholder')
           }
         />
       </div>
 
       <div className="form-group">
-        <label className="form-label">类型</label>
+        <label className="form-label">{t('form.typeLabel')}</label>
         <select
           className="form-control"
           value={form.resourceTypeId}
           onChange={(e) => setField('resourceTypeId', e.target.value)}
         >
-          {typeOptions.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
+          {typeOptions.map((rt) => (
+            <option key={rt.id} value={rt.id}>
+              {rt.name}
             </option>
           ))}
         </select>
@@ -559,13 +554,13 @@ export function ResourceFormModal({
 
       {!isEdit && (
         <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="form-label">文件夹</label>
+          <label className="form-label">{t('form.folderLabel')}</label>
           <select
             className="form-control"
             value={form.folderParentId}
             onChange={(e) => setField('folderParentId', e.target.value)}
           >
-            <option value="">无文件夹（根目录）</option>
+            <option value="">{t('form.noFolder')}</option>
             {folderOptions.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.name}

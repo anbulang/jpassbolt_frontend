@@ -29,6 +29,7 @@ import {
     type FormEvent,
     type ReactNode,
 } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
 import {
     User as UserIcon,
     ShieldCheck,
@@ -66,6 +67,10 @@ import { Badge } from '../components/Badge';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { FullSpinner, Spinner } from '../components/Spinner';
 import { useToast } from '../components/toastContext';
+import { useTheme } from '../theme';
+import { setUserLocale } from '../services/accountSettings';
+import { describeApiError } from '../i18n/errors';
+import type { AppLocale } from '../i18n';
 
 // ---------------------------------------------------------------------------
 // Error helpers
@@ -77,11 +82,6 @@ interface ApiErrorLike {
 
 function asApiError(err: unknown): ApiErrorLike {
     return (err ?? {}) as ApiErrorLike;
-}
-
-function errMessage(err: unknown, fallback: string): string {
-    const e = asApiError(err);
-    return e.response?.data?.header?.message || e.message || fallback;
 }
 
 function httpStatus(err: unknown): number | undefined {
@@ -99,9 +99,6 @@ function isTotpProviderDisabled(err: unknown): boolean {
     const raw = (e.response?.data?.header?.message || e.message || '').toLowerCase();
     return raw.includes('not enabled for your organization');
 }
-
-const TOTP_ORG_DISABLED_MESSAGE =
-    '两步验证尚未在组织层启用。请管理员先在「服务器与组织」标签页开启「全组织 TOTP」，再回到此处设置。';
 
 // ---------------------------------------------------------------------------
 // otpauth:// parsing
@@ -141,6 +138,7 @@ function ErrorBanner({ children }: { children: ReactNode }) {
  * too large for the supported versions.
  */
 function OtpauthQr({ data, size = 196 }: { data: string; size?: number }) {
+    const { t } = useTranslation('settings');
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
     // Compute the matrix during render so the failure state is derived, not set
@@ -196,7 +194,7 @@ function OtpauthQr({ data, size = 196 }: { data: string; size?: number }) {
                     padding: '12px',
                 }}
             >
-                无法生成二维码 —— 请将下方密钥手动粘贴到你的身份验证器。
+                {t('security.qr.unavailable')}
             </div>
         );
     }
@@ -204,7 +202,7 @@ function OtpauthQr({ data, size = 196 }: { data: string; size?: number }) {
     return (
         <canvas
             ref={canvasRef}
-            aria-label="TOTP 绑定二维码"
+            aria-label={t('security.qr.ariaLabel')}
         />
     );
 }
@@ -214,16 +212,17 @@ function OtpauthQr({ data, size = 196 }: { data: string; size?: number }) {
 // ---------------------------------------------------------------------------
 type Tab = 'profile' | 'security' | 'account';
 
-const TABS: { id: Tab; label: string; icon: typeof UserIcon }[] = [
-    { id: 'profile', label: '账户与资料', icon: UserIcon },
-    { id: 'security', label: '安全 / 两步验证', icon: ShieldCheck },
-    { id: 'account', label: '服务器与组织', icon: Server },
+const TABS: { id: Tab; labelKey: string; icon: typeof UserIcon }[] = [
+    { id: 'profile', labelKey: 'tabs.profile', icon: UserIcon },
+    { id: 'security', labelKey: 'tabs.security', icon: ShieldCheck },
+    { id: 'account', labelKey: 'tabs.account', icon: Server },
 ];
 
 // ===========================================================================
 // Page
 // ===========================================================================
 export default function Settings() {
+    const { t } = useTranslation('settings');
     const [tab, setTab] = useState<Tab>('profile');
 
     const [me, setMe] = useState<User | null>(null);
@@ -237,7 +236,7 @@ export default function Settings() {
             const user = await getMe();
             setMe(user);
         } catch (err: unknown) {
-            setMeError(errMessage(err, 'Failed to load your account.'));
+            setMeError(describeApiError(err));
         } finally {
             setMeLoading(false);
         }
@@ -254,15 +253,15 @@ export default function Settings() {
             <div className="slayout">
                 {/* Left settings nav */}
                 <div className="snav">
-                    <div className="snav-label">设置</div>
-                    {TABS.map(({ id, label, icon: Icon }) => (
+                    <div className="snav-label">{t('nav.heading')}</div>
+                    {TABS.map(({ id, labelKey, icon: Icon }) => (
                         <button
                             key={id}
                             type="button"
                             className={`snav-item${tab === id ? ' on' : ''}`}
                             onClick={() => setTab(id)}
                         >
-                            <Icon /> {label}
+                            <Icon /> {t(labelKey)}
                         </button>
                     ))}
                 </div>
@@ -271,12 +270,17 @@ export default function Settings() {
                 <div className="scontent">
                     <div className="scontent-inner">
                         {meLoading ? (
-                            <FullSpinner label="正在加载你的账户..." />
+                            <FullSpinner label={t('loadingAccount')} />
                         ) : meError ? (
                             <ErrorBanner>{meError}</ErrorBanner>
                         ) : (
                             <>
-                                {tab === 'profile' && me && <ProfileTab me={me} onSaved={loadMe} />}
+                                {tab === 'profile' && me && (
+                                    <>
+                                        <ProfileTab me={me} onSaved={loadMe} />
+                                        <AppearanceCard />
+                                    </>
+                                )}
                                 {tab === 'security' && <SecurityTab />}
                                 {tab === 'account' && me && (
                                     <AccountTab me={me} isAdmin={isAdmin} />
@@ -294,6 +298,7 @@ export default function Settings() {
 // Profile tab
 // ===========================================================================
 function ProfileTab({ me, onSaved }: { me: User; onSaved: () => void | Promise<void> }) {
+    const { t } = useTranslation('settings');
     const toast = useToast();
     const [firstName, setFirstName] = useState(me.profile?.first_name ?? '');
     const [lastName, setLastName] = useState(me.profile?.last_name ?? '');
@@ -308,7 +313,7 @@ function ProfileTab({ me, onSaved }: { me: User; onSaved: () => void | Promise<v
     const handleSave = async (e: FormEvent) => {
         e.preventDefault();
         if (!firstName.trim() || !lastName.trim()) {
-            setError('姓与名均为必填项。');
+            setError(t('profile.nameRequired'));
             return;
         }
         setSaving(true);
@@ -318,10 +323,10 @@ function ProfileTab({ me, onSaved }: { me: User; onSaved: () => void | Promise<v
                 first_name: firstName.trim(),
                 last_name: lastName.trim(),
             });
-            toast.success('资料已更新。');
+            toast.success(t('profile.updated'));
             await onSaved();
         } catch (err: unknown) {
-            const msg = errMessage(err, '更新资料失败。');
+            const msg = describeApiError(err);
             setError(msg);
             toast.error(msg);
         } finally {
@@ -331,8 +336,8 @@ function ProfileTab({ me, onSaved }: { me: User; onSaved: () => void | Promise<v
 
     return (
         <form onSubmit={handleSave} style={{ display: 'contents' }}>
-            <h2 className="stitle">账户与资料</h2>
-            <div className="ssub">管理你的身份信息、显示名称与登录凭据。</div>
+            <h2 className="stitle">{t('profile.title')}</h2>
+            <div className="ssub">{t('profile.subtitle')}</div>
 
             {error && (
                 <div style={{ marginBottom: '18px' }}>
@@ -359,18 +364,18 @@ function ProfileTab({ me, onSaved }: { me: User; onSaved: () => void | Promise<v
                         {/* Avatar upload is intentionally not offered: the backend exposes no
                             avatar write endpoint (UserDto.ProfilePayload.avatar is accepted but
                             ignored), so a "Change avatar" control could never succeed. */}
-                        <div className="hint">头像更换暂未支持。</div>
+                        <div className="hint">{t('profile.avatarUnsupported')}</div>
                     </div>
                     <div className="sv">
                         <Badge variant={me.role?.name === 'admin' ? 'primary' : 'default'}>
-                            {me.role?.name ?? 'user'}
+                            {me.role?.name ?? t('profile.roleFallback')}
                         </Badge>
                     </div>
                 </div>
 
                 <div className="srow">
                     <div className="sk">
-                        <div className="label">名字</div>
+                        <div className="label">{t('profile.firstName')}</div>
                     </div>
                     <div className="sv">
                         <input
@@ -386,7 +391,7 @@ function ProfileTab({ me, onSaved }: { me: User; onSaved: () => void | Promise<v
 
                 <div className="srow">
                     <div className="sk">
-                        <div className="label">姓氏</div>
+                        <div className="label">{t('profile.lastName')}</div>
                     </div>
                     <div className="sv">
                         <input
@@ -402,8 +407,8 @@ function ProfileTab({ me, onSaved }: { me: User; onSaved: () => void | Promise<v
 
                 <div className="srow">
                     <div className="sk">
-                        <div className="label">用户名</div>
-                        <div className="hint">用于登录，不可更改</div>
+                        <div className="label">{t('profile.username')}</div>
+                        <div className="hint">{t('profile.usernameHint')}</div>
                     </div>
                     <div className="sv">
                         <input
@@ -420,10 +425,186 @@ function ProfileTab({ me, onSaved }: { me: User; onSaved: () => void | Promise<v
             <div style={{ display: 'flex', gap: '12px' }}>
                 <button type="submit" className="btn primary" disabled={saving || !dirty}>
                     {saving ? <Spinner size={16} color="#fff" /> : null}
-                    {saving ? '保存中...' : '保存更改'}
+                    {saving ? t('common:actions.saving') : t('profile.save')}
                 </button>
             </div>
         </form>
+    );
+}
+
+// ===========================================================================
+// Appearance & language tab (rendered inside ProfileTab via AppearanceCard)
+// ===========================================================================
+const IDLE_OPTIONS = [300, 900, 1800, 3600, 0] as const;
+const REVEAL_OPTIONS = [10, 20, 30, 60] as const;
+const BURN_OPTIONS = [0, 15, 30, 60] as const;
+
+function AppearanceCard() {
+    const { t } = useTranslation('settings');
+    const { prefs, setPref } = useTheme();
+
+    const onLocale = (value: AppLocale) => {
+        setPref('locale', value);
+        // Best-effort backend sync; a failed sync must never block the toggle.
+        setUserLocale(value).catch(() => {});
+    };
+
+    const idleLabel = (secs: number): string => {
+        switch (secs) {
+            case 300:
+                return t('appearance.idle.m5');
+            case 900:
+                return t('appearance.idle.m15');
+            case 1800:
+                return t('appearance.idle.m30');
+            case 3600:
+                return t('appearance.idle.h1');
+            default:
+                return t('appearance.idle.never');
+        }
+    };
+
+    return (
+        <span style={{ display: 'contents' }}>
+            <h2 className="stitle">{t('appearance.title')}</h2>
+            <div className="ssub">{t('appearance.subtitle')}</div>
+
+            <div className="scard">
+                {/* Language */}
+                <div className="srow">
+                    <div className="sk">
+                        <div className="label">{t('appearance.language.label')}</div>
+                        <div className="hint">{t('appearance.language.hint')}</div>
+                    </div>
+                    <div className="sv">
+                        <select
+                            className="sinput"
+                            value={prefs.locale}
+                            onChange={(e) => onLocale(e.target.value as AppLocale)}
+                            aria-label={t('appearance.language.label')}
+                        >
+                            <option value="zh">{t('appearance.language.zh')}</option>
+                            <option value="en">{t('appearance.language.en')}</option>
+                        </select>
+                    </div>
+                </div>
+
+                {/* Theme */}
+                <div className="srow">
+                    <div className="sk">
+                        <div className="label">{t('appearance.theme.label')}</div>
+                        <div className="hint">{t('appearance.theme.hint')}</div>
+                    </div>
+                    <div className="sv">
+                        <select
+                            className="sinput"
+                            value={prefs.theme}
+                            onChange={(e) =>
+                                setPref('theme', e.target.value as 'light' | 'dark')
+                            }
+                            aria-label={t('appearance.theme.label')}
+                        >
+                            <option value="light">{t('appearance.theme.light')}</option>
+                            <option value="dark">{t('appearance.theme.dark')}</option>
+                        </select>
+                    </div>
+                </div>
+
+                {/* Density */}
+                <div className="srow">
+                    <div className="sk">
+                        <div className="label">{t('appearance.density.label')}</div>
+                        <div className="hint">{t('appearance.density.hint')}</div>
+                    </div>
+                    <div className="sv">
+                        <select
+                            className="sinput"
+                            value={prefs.density}
+                            onChange={(e) =>
+                                setPref(
+                                    'density',
+                                    e.target.value as 'comfortable' | 'compact',
+                                )
+                            }
+                            aria-label={t('appearance.density.label')}
+                        >
+                            <option value="comfortable">
+                                {t('appearance.density.comfortable')}
+                            </option>
+                            <option value="compact">{t('appearance.density.compact')}</option>
+                        </select>
+                    </div>
+                </div>
+
+                {/* Auto-lock (idle) */}
+                <div className="srow">
+                    <div className="sk">
+                        <div className="label">{t('appearance.idle.label')}</div>
+                        <div className="hint">{t('appearance.idle.hint')}</div>
+                    </div>
+                    <div className="sv">
+                        <select
+                            className="sinput"
+                            value={prefs.idleSecs}
+                            onChange={(e) => setPref('idleSecs', Number(e.target.value))}
+                            aria-label={t('appearance.idle.label')}
+                        >
+                            {IDLE_OPTIONS.map((secs) => (
+                                <option key={secs} value={secs}>
+                                    {idleLabel(secs)}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
+                {/* Reveal duration */}
+                <div className="srow">
+                    <div className="sk">
+                        <div className="label">{t('appearance.reveal.label')}</div>
+                        <div className="hint">{t('appearance.reveal.hint')}</div>
+                    </div>
+                    <div className="sv">
+                        <select
+                            className="sinput"
+                            value={prefs.revealSecs}
+                            onChange={(e) => setPref('revealSecs', Number(e.target.value))}
+                            aria-label={t('appearance.reveal.label')}
+                        >
+                            {REVEAL_OPTIONS.map((secs) => (
+                                <option key={secs} value={secs}>
+                                    {t('appearance.reveal.seconds', { count: secs })}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
+                {/* Clipboard clear delay (burn) */}
+                <div className="srow">
+                    <div className="sk">
+                        <div className="label">{t('appearance.burn.label')}</div>
+                        <div className="hint">{t('appearance.burn.hint')}</div>
+                    </div>
+                    <div className="sv">
+                        <select
+                            className="sinput"
+                            value={prefs.burnSecs}
+                            onChange={(e) => setPref('burnSecs', Number(e.target.value))}
+                            aria-label={t('appearance.burn.label')}
+                        >
+                            {BURN_OPTIONS.map((secs) => (
+                                <option key={secs} value={secs}>
+                                    {secs === 0
+                                        ? t('appearance.burn.never')
+                                        : t('appearance.burn.seconds', { count: secs })}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </span>
     );
 }
 
@@ -433,6 +614,7 @@ function ProfileTab({ me, onSaved }: { me: User; onSaved: () => void | Promise<v
 type MfaStatus = 'loading' | 'disabled' | 'enabled' | 'error';
 
 function SecurityTab() {
+    const { t } = useTranslation('settings');
     const toast = useToast();
 
     const [status, setStatus] = useState<MfaStatus>('loading');
@@ -473,13 +655,13 @@ function SecurityTab() {
         } catch (err: unknown) {
             if (httpStatus(err) === 429) setRateLimited(true);
             if (isTotpProviderDisabled(err)) {
-                setError(TOTP_ORG_DISABLED_MESSAGE);
+                setError(t('security.orgDisabled'));
             } else {
-                setError(errMessage(err, '加载 MFA 状态失败。'));
+                setError(describeApiError(err));
             }
             setStatus('error');
         }
-    }, []);
+    }, [t]);
 
     useEffect(() => {
         void probe();
@@ -492,16 +674,16 @@ function SecurityTab() {
         try {
             const state = await getTotpSetupState();
             if (!state.otpProvisioningUri) {
-                throw new Error('服务器未返回绑定地址（provisioning URI）。');
+                throw new Error(t('security.setup.noProvisioningUri'));
             }
             setSetup(state);
             setCode('');
         } catch (err: unknown) {
             if (httpStatus(err) === 429) setRateLimited(true);
             if (isTotpProviderDisabled(err)) {
-                setError(TOTP_ORG_DISABLED_MESSAGE);
+                setError(t('security.orgDisabled'));
             } else {
-                setError(errMessage(err, '启动两步验证设置失败。'));
+                setError(describeApiError(err));
             }
         } finally {
             setProvisioning(false);
@@ -518,7 +700,7 @@ function SecurityTab() {
         e.preventDefault();
         if (!setup?.otpProvisioningUri) return;
         if (!/^\d{6}$/.test(code)) {
-            setError('请输入身份验证器 App 生成的 6 位验证码。');
+            setError(t('security.setup.invalidCode'));
             return;
         }
         setEnabling(true);
@@ -533,18 +715,13 @@ function SecurityTab() {
             setSetup(null);
             setCode('');
             setStatus('enabled');
-            toast.success('两步验证已启用。');
+            toast.success(t('security.setup.enabled'));
         } catch (err: unknown) {
             if (httpStatus(err) === 429) {
                 setRateLimited(true);
-                setError('尝试次数过多，请稍后再试。');
+                setError(t('security.rateLimited'));
             } else {
-                setError(
-                    errMessage(
-                        err,
-                        '验证码校验未通过。请检查身份验证器 App 后重试。',
-                    ),
-                );
+                setError(describeApiError(err));
             }
         } finally {
             setEnabling(false);
@@ -559,9 +736,9 @@ function SecurityTab() {
             setVerified(null);
             setStatus('disabled');
             setConfirmDisable(false);
-            toast.success('两步验证已关闭。');
+            toast.success(t('security.disabled.done'));
         } catch (err: unknown) {
-            const msg = errMessage(err, '关闭 MFA 失败。');
+            const msg = describeApiError(err);
             setError(msg);
             toast.error(msg);
         } finally {
@@ -576,14 +753,14 @@ function SecurityTab() {
 
     return (
         <span style={{ display: 'contents' }}>
-            <h2 className="stitle">安全 / 两步验证</h2>
+            <h2 className="stitle">{t('security.title')}</h2>
             <div className="ssub">
-                为登录链路增加一层验证。MFA 校验在服务器完成，不影响端到端加密。
+                {t('security.subtitle')}
             </div>
 
             {rateLimited && (
                 <div style={{ marginBottom: '16px' }}>
-                    <ErrorBanner>尝试次数过多，请稍后再试。</ErrorBanner>
+                    <ErrorBanner>{t('security.rateLimited')}</ErrorBanner>
                 </div>
             )}
             {error && !rateLimited && (
@@ -597,29 +774,29 @@ function SecurityTab() {
                     <ShieldCheck
                         style={{ color: status === 'enabled' ? 'var(--green)' : 'var(--text-2)' }}
                     />
-                    <h3>身份验证器 App (TOTP)</h3>
+                    <h3>{t('security.card.title')}</h3>
                     {status === 'enabled' && (
                         <span className="chip green" style={{ marginLeft: 'auto' }}>
-                            <Check /> 已启用
+                            <Check /> {t('security.card.enabled')}
                         </span>
                     )}
                     {status === 'disabled' && (
                         <span className="chip neutral" style={{ marginLeft: 'auto' }}>
-                            未配置
+                            {t('security.card.notConfigured')}
                         </span>
                     )}
                 </div>
 
                 <div style={{ padding: '15px 18px' }}>
                     <div className="hint" style={{ marginBottom: '14px', lineHeight: 1.5 }}>
-                        登录时使用身份验证器 App（Google Authenticator、Authy、1Password 等）生成的一次性验证码作为第二重身份验证。
+                        {t('security.card.intro')}
                     </div>
 
-                    {status === 'loading' && <FullSpinner label="正在检查 MFA 状态..." />}
+                    {status === 'loading' && <FullSpinner label={t('security.card.checking')} />}
 
                     {status === 'error' && (
                         <button type="button" className="btn" onClick={() => void probe()}>
-                            重试
+                            {t('common:actions.retry')}
                         </button>
                     )}
 
@@ -637,8 +814,11 @@ function SecurityTab() {
                             >
                                 <Check size={18} color="var(--green)" />
                                 <span>
-                                    已启用
-                                    {verified ? <>，绑定于 {formatDate(verified)}</> : null}。
+                                    {verified
+                                        ? t('security.card.enabledOn', {
+                                              date: formatDate(verified),
+                                          })
+                                        : t('security.card.enabledPlain')}
                                 </span>
                             </div>
                             <div>
@@ -647,7 +827,7 @@ function SecurityTab() {
                                     className="btn danger"
                                     onClick={() => setConfirmDisable(true)}
                                 >
-                                    <ShieldOff size={16} /> 关闭两步验证
+                                    <ShieldOff size={16} /> {t('security.card.disableButton')}
                                 </button>
                             </div>
                         </div>
@@ -666,7 +846,9 @@ function SecurityTab() {
                             ) : (
                                 <ShieldCheck size={16} />
                             )}
-                            {provisioning ? '准备中...' : '设置两步验证'}
+                            {provisioning
+                                ? t('security.card.preparing')
+                                : t('security.card.setupButton')}
                         </button>
                     )}
                 </div>
@@ -679,11 +861,11 @@ function SecurityTab() {
                         <div className="qr-info">
                             <ol>
                                 <li>
-                                    用 Google Authenticator、1Password 或 Authy 扫描二维码。
+                                    {t('security.setup.scanStep')}
                                 </li>
                                 {parsed?.secret && (
                                     <li>
-                                        或手动输入密钥：
+                                        {t('security.setup.manualKeyStep')}
                                         <br />
                                         <span className="qr-secret">
                                             {parsed.secret}
@@ -692,7 +874,11 @@ function SecurityTab() {
                                     </li>
                                 )}
                                 <li>
-                                    或粘贴完整的 <code>otpauth://</code> URI：
+                                    <Trans
+                                        i18nKey="security.setup.uriStep"
+                                        ns="settings"
+                                        components={{ code: <code /> }}
+                                    />
                                     <br />
                                     <span className="qr-secret" style={{ maxWidth: '100%' }}>
                                         <span
@@ -709,7 +895,7 @@ function SecurityTab() {
                                     </span>
                                 </li>
                                 <li>
-                                    输入 6 位验证码完成绑定。
+                                    {t('security.setup.codeStep')}
                                     <form onSubmit={handleEnable} style={{ marginTop: '10px' }}>
                                         <input
                                             id="totp-code"
@@ -741,7 +927,9 @@ function SecurityTab() {
                                                 {enabling ? (
                                                     <Spinner size={16} color="#fff" />
                                                 ) : null}
-                                                {enabling ? '验证中...' : '验证并启用'}
+                                                {enabling
+                                                    ? t('security.setup.verifying')
+                                                    : t('security.setup.verifyEnable')}
                                             </button>
                                             <button
                                                 type="button"
@@ -749,7 +937,7 @@ function SecurityTab() {
                                                 onClick={cancelSetup}
                                                 disabled={enabling}
                                             >
-                                                取消
+                                                {t('common:actions.cancel')}
                                             </button>
                                         </div>
                                     </form>
@@ -762,9 +950,9 @@ function SecurityTab() {
 
             <ConfirmDialog
                 open={confirmDisable}
-                title="关闭两步验证？"
-                message="关闭后登录将不再需要一次性验证码。你可以随时重新启用。"
-                confirmLabel="关闭"
+                title={t('security.confirmDisable.title')}
+                message={t('security.confirmDisable.message')}
+                confirmLabel={t('security.confirmDisable.confirmLabel')}
                 danger
                 loading={disabling}
                 onConfirm={() => void handleDisable()}
@@ -778,6 +966,7 @@ function SecurityTab() {
 // Inline copy button matching the .qr-secret design (clipboard verbatim).
 // ---------------------------------------------------------------------------
 function CopyButton({ value }: { value: string }) {
+    const { t } = useTranslation('common');
     const [copied, setCopied] = useState(false);
     const onCopy = async () => {
         try {
@@ -789,7 +978,12 @@ function CopyButton({ value }: { value: string }) {
         }
     };
     return (
-        <button type="button" onClick={onCopy} aria-label="复制" title="复制">
+        <button
+            type="button"
+            onClick={onCopy}
+            aria-label={t('actions.copy')}
+            title={t('actions.copy')}
+        >
             {copied ? <Check size={14} color="var(--green)" /> : <Copy size={14} />}
         </button>
     );
@@ -799,6 +993,7 @@ function CopyButton({ value }: { value: string }) {
 // Account / Server tab
 // ===========================================================================
 function AccountTab({ me, isAdmin }: { me: User; isAdmin: boolean }) {
+    const { t } = useTranslation('settings');
     const { ownFingerprint, ownPublicKeyArmored } = useKey();
     const [showFp, setShowFp] = useState(false);
     const [fpCopied, setFpCopied] = useState(false);
@@ -823,21 +1018,23 @@ function AccountTab({ me, isAdmin }: { me: User; isAdmin: boolean }) {
 
     return (
         <span style={{ display: 'contents' }}>
-            <h2 className="stitle">服务器与组织</h2>
-            <div className="ssub">你的加密密钥指纹、服务器信息与登录凭据。</div>
+            <h2 className="stitle">{t('account.title')}</h2>
+            <div className="ssub">{t('account.subtitle')}</div>
 
             {/* GPG key card */}
             <div className="scard">
                 <div className="scard-h">
                     <Fingerprint />
-                    <h3>OpenPGP 密钥指纹</h3>
+                    <h3>{t('account.gpg.title')}</h3>
                     <Badge variant={ownPublicKeyArmored ? 'success' : 'muted'}>
-                        {ownPublicKeyArmored ? '已解锁' : '已锁定'}
+                        {ownPublicKeyArmored
+                            ? t('common:state.unlocked')
+                            : t('common:state.locked')}
                     </Badge>
                 </div>
                 <div className="srow" style={{ display: 'block' }}>
                     <div className="hint" style={{ marginBottom: 10, lineHeight: 1.5 }}>
-                        此 OpenPGP 密钥在你的浏览器内完成全部加解密。可向他人公开指纹以核验身份；私钥与 passphrase 永不离开本设备、服务器永不可见。
+                        {t('account.gpg.intro')}
                     </div>
                     {fingerprintPretty ? (
                         <div className="fpbox">
@@ -849,8 +1046,8 @@ function AccountTab({ me, isAdmin }: { me: User; isAdmin: boolean }) {
                                 type="button"
                                 className="copybtn"
                                 onClick={() => setShowFp((s) => !s)}
-                                aria-label={showFp ? '隐藏' : '显示'}
-                                title={showFp ? '隐藏' : '显示'}
+                                aria-label={showFp ? t('common:actions.hide') : t('common:actions.show')}
+                                title={showFp ? t('common:actions.hide') : t('common:actions.show')}
                             >
                                 {showFp ? <EyeOff size={16} /> : <Eye size={16} />}
                             </button>
@@ -858,15 +1055,15 @@ function AccountTab({ me, isAdmin }: { me: User; isAdmin: boolean }) {
                                 type="button"
                                 className={`copybtn${fpCopied ? ' ok' : ''}`}
                                 onClick={() => void copyFingerprint()}
-                                aria-label="复制指纹"
-                                title="复制指纹"
+                                aria-label={t('account.gpg.copyFingerprint')}
+                                title={t('account.gpg.copyFingerprint')}
                             >
                                 {fpCopied ? <Check size={16} /> : <Copy size={16} />}
                             </button>
                         </div>
                     ) : (
                         <div style={{ color: 'var(--text-3)', fontSize: '13.5px' }}>
-                            密钥已锁定 —— 请先解锁保险库以查看指纹。
+                            {t('account.gpg.locked')}
                         </div>
                     )}
                 </div>
@@ -875,7 +1072,7 @@ function AccountTab({ me, isAdmin }: { me: User; isAdmin: boolean }) {
                     <>
                         <div className="srow">
                             <div className="sk">
-                                <div className="label">Key ID</div>
+                                <div className="label">{t('account.gpg.keyId')}</div>
                             </div>
                             <div
                                 className="sv"
@@ -891,7 +1088,7 @@ function AccountTab({ me, isAdmin }: { me: User; isAdmin: boolean }) {
                         {me.gpgkey.bits != null && (
                             <div className="srow">
                                 <div className="sk">
-                                    <div className="label">密钥长度</div>
+                                    <div className="label">{t('account.gpg.keyBits')}</div>
                                 </div>
                                 <div
                                     className="sv"
@@ -901,7 +1098,7 @@ function AccountTab({ me, isAdmin }: { me: User; isAdmin: boolean }) {
                                         color: 'var(--text-2)',
                                     }}
                                 >
-                                    {me.gpgkey.bits} 位
+                                    {t('account.gpg.bitsValue', { bits: me.gpgkey.bits })}
                                 </div>
                             </div>
                         )}
@@ -916,12 +1113,12 @@ function AccountTab({ me, isAdmin }: { me: User; isAdmin: boolean }) {
             <div className="scard">
                 <div className="srow">
                     <div className="sk">
-                        <div className="label">退出登录</div>
-                        <div className="hint">清除本地会话并返回登录页</div>
+                        <div className="label">{t('account.logout.label')}</div>
+                        <div className="hint">{t('account.logout.hint')}</div>
                     </div>
                     <div className="sv">
                         <button type="button" className="btn danger" onClick={logout}>
-                            <LogOut size={16} /> 退出登录
+                            <LogOut size={16} /> {t('account.logout.button')}
                         </button>
                     </div>
                 </div>
@@ -931,6 +1128,7 @@ function AccountTab({ me, isAdmin }: { me: User; isAdmin: boolean }) {
 }
 
 function ServerSettingsCard({ isAdmin }: { isAdmin: boolean }) {
+    const { t } = useTranslation('settings');
     const toast = useToast();
     const [settings, setSettings] = useState<ServerSettings | null>(null);
     const [loading, setLoading] = useState(true);
@@ -950,7 +1148,7 @@ function ServerSettingsCard({ isAdmin }: { isAdmin: boolean }) {
                 const s = await getServerSettings();
                 if (!cancelled) setSettings(s);
             } catch (err: unknown) {
-                if (!cancelled) setError(errMessage(err, 'Failed to load server settings.'));
+                if (!cancelled) setError(describeApiError(err));
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -962,8 +1160,8 @@ function ServerSettingsCard({ isAdmin }: { isAdmin: boolean }) {
                     if (!cancelled) {
                         setOrgMfaError(
                             httpStatus(err) === 403
-                                ? 'You do not have permission to view organization MFA settings.'
-                                : errMessage(err, 'Failed to load organization MFA settings.'),
+                                ? t('errors.orgMfaForbiddenView')
+                                : describeApiError(err),
                         );
                     }
                 }
@@ -972,7 +1170,7 @@ function ServerSettingsCard({ isAdmin }: { isAdmin: boolean }) {
         return () => {
             cancelled = true;
         };
-    }, [isAdmin]);
+    }, [isAdmin, t]);
 
     const rows = useMemo(() => (settings ? flattenSettings(settings) : []), [settings]);
 
@@ -986,12 +1184,16 @@ function ServerSettingsCard({ isAdmin }: { isAdmin: boolean }) {
         try {
             const updated = await updateOrgMfaSettings(next);
             setOrgMfa(updated);
-            toast.success(next.length ? 'Organization TOTP enabled.' : 'Organization TOTP disabled.');
+            toast.success(
+                next.length
+                    ? t('account.orgMfa.enabledToast')
+                    : t('account.orgMfa.disabledToast'),
+            );
         } catch (err: unknown) {
             const msg =
                 httpStatus(err) === 403
-                    ? 'You do not have permission to change organization MFA settings.'
-                    : errMessage(err, 'Failed to update organization MFA settings.');
+                    ? t('errors.orgMfaForbiddenChange')
+                    : describeApiError(err);
             setOrgMfaError(msg);
             toast.error(msg);
         } finally {
@@ -1003,21 +1205,21 @@ function ServerSettingsCard({ isAdmin }: { isAdmin: boolean }) {
         <div className="scard">
             <div className="scard-h">
                 <Server />
-                <h3>服务器信息</h3>
+                <h3>{t('account.server.title')}</h3>
             </div>
 
             <div style={{ padding: '15px 18px' }}>
                 <div className="hint" style={{ marginBottom: rows.length ? 14 : 0 }}>
-                    由 JPassbolt API 返回的只读信息。
+                    {t('account.server.readonly')}
                 </div>
 
                 {loading ? (
-                    <FullSpinner label="正在加载服务器信息..." />
+                    <FullSpinner label={t('account.server.loading')} />
                 ) : error ? (
                     <ErrorBanner>{error}</ErrorBanner>
                 ) : rows.length === 0 ? (
                     <div style={{ color: 'var(--text-3)', fontSize: '13.5px' }}>
-                        服务器未返回任何配置信息。
+                        {t('account.server.empty')}
                     </div>
                 ) : (
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
@@ -1057,13 +1259,15 @@ function ServerSettingsCard({ isAdmin }: { isAdmin: boolean }) {
                 <>
                     <div className="scard-h" style={{ borderTop: '1px solid var(--border)' }}>
                         <ShieldCheck />
-                        <h3>组织两步验证（管理员）</h3>
+                        <h3>{t('account.orgMfa.title')}</h3>
                         {orgMfa && (
                             <span
                                 className={`chip ${totpOrgEnabled ? 'green' : 'neutral'}`}
                                 style={{ marginLeft: 'auto' }}
                             >
-                                {totpOrgEnabled ? 'TOTP 已开启' : 'TOTP 已关闭'}
+                                {totpOrgEnabled
+                                    ? t('account.orgMfa.totpOn')
+                                    : t('account.orgMfa.totpOff')}
                             </span>
                         )}
                     </div>
@@ -1074,11 +1278,11 @@ function ServerSettingsCard({ isAdmin }: { isAdmin: boolean }) {
                     ) : orgMfa ? (
                         <div className="srow">
                             <div className="sk">
-                                <div className="label">全组织 TOTP</div>
+                                <div className="label">{t('account.orgMfa.wholeOrgTotp')}</div>
                                 <div className="hint">
                                     {totpOrgEnabled
-                                        ? '本组织内所有用户均可启用 TOTP。'
-                                        : '当前已在全组织范围内关闭 TOTP。'}
+                                        ? t('account.orgMfa.hintOn')
+                                        : t('account.orgMfa.hintOff')}
                                 </div>
                             </div>
                             <div className="sv">
@@ -1088,13 +1292,13 @@ function ServerSettingsCard({ isAdmin }: { isAdmin: boolean }) {
                                     onClick={() => void toggleOrgTotp()}
                                     disabled={orgMfaBusy}
                                     aria-pressed={totpOrgEnabled}
-                                    aria-label="切换全组织 TOTP"
+                                    aria-label={t('account.orgMfa.toggleAria')}
                                 />
                             </div>
                         </div>
                     ) : (
                         <div style={{ padding: '15px 18px' }}>
-                            <FullSpinner label="正在加载组织 MFA..." />
+                            <FullSpinner label={t('account.orgMfa.loading')} />
                         </div>
                     )}
                 </>

@@ -1,0 +1,239 @@
+{
+  "nav": {
+    "heading": "设置"
+  },
+  "tabs": {
+    "profile": "账户与资料",
+    "security": "安全 / 两步验证",
+    "account": "服务器与组织"
+  },
+  "loadingAccount": "正在加载你的账户...",
+  "errors": {
+    "loadAccount": "加载你的账户失败。",
+    "loadServerSettings": "加载服务器信息失败。",
+    "loadOrgMfa": "加载组织 MFA 设置失败。",
+    "orgMfaForbiddenView": "你没有权限查看组织 MFA 设置。",
+    "orgMfaForbiddenChange": "你没有权限修改组织 MFA 设置。",
+    "updateOrgMfa": "更新组织 MFA 设置失败。"
+  },
+  "profile": {
+    "title": "账户与资料",
+    "subtitle": "管理你的身份信息、显示名称与登录凭据。",
+    "nameRequired": "姓与名均为必填项。",
+    "updated": "资料已更新。",
+    "updateFailed": "更新资料失败。",
+    "avatarUnsupported": "头像更换暂未支持。",
+    "firstName": "名字",
+    "lastName": "姓氏",
+    "username": "用户名",
+    "usernameHint": "用于登录，不可更改",
+    "save": "保存更改",
+    "roleFallback": "user"
+  },
+  "appearance": {
+    "title": "外观与语言",
+    "subtitle": "调整界面外观、语言与本地安全行为。这些偏好仅保存在本设备。",
+    "language": {
+      "label": "界面语言",
+      "hint": "切换整个界面的显示语言。",
+      "zh": "中文",
+      "en": "English"
+    },
+    "theme": {
+      "label": "主题",
+      "hint": "选择浅色或深色外观。",
+      "light": "浅色",
+      "dark": "深色"
+    },
+    "density": {
+      "label": "信息密度",
+      "hint": "在更宽松或更紧凑的布局之间切换。",
+      "comfortable": "宽松",
+      "compact": "紧凑"
+    },
+    "idle": {
+      "label": "自动锁定",
+      "hint": "在无操作一段时间后自动锁定保险库。",
+      "m5": "5 分钟",
+      "m15": "15 分钟",
+      "m30": "30 分钟",
+      "h1": "1 小时",
+      "never": "从不"
+    },
+    "reveal": {
+      "label": "明文显示时长",
+      "hint": "显示密码后，经过这段时间自动重新隐藏。",
+      "seconds": "{{count}} 秒"
+    },
+    "burn": {
+      "label": "剪贴板清除延迟",
+      "hint": "复制密码后，经过这段时间尽力清除剪贴板。",
+      "seconds": "{{count}} 秒",
+      "never": "从不"
+    }
+  },
+  "security": {
+    "title": "安全 / 两步验证",
+    "subtitle": "为登录链路增加一层验证。MFA 校验在服务器完成，不影响端到端加密。",
+    "rateLimited": "尝试次数过多，请稍后再试。",
+    "orgDisabled": "两步验证尚未在组织层启用。请管理员先在「服务器与组织」标签页开启「全组织 TOTP」，再回到此处设置。",
+    "loadStatusFailed": "加载 MFA 状态失败。",
+    "card": {
+      "title": "身份验证器 App (TOTP)",
+      "enabled": "已启用",
+      "notConfigured": "未配置",
+      "intro": "登录时使用身份验证器 App（Google Authenticator、Authy、1Password 等）生成的一次性验证码作为第二重身份验证。",
+      "checking": "正在检查 MFA 状态...",
+      "enabledOn": "已启用，绑定于 {{date}}。",
+      "enabledPlain": "已启用。",
+      "disableButton": "关闭两步验证",
+      "setupButton": "设置两步验证",
+      "preparing": "准备中..."
+    },
+    "setup": {
+      "noProvisioningUri": "服务器未返回绑定地址（provisioning URI）。",
+      "startFailed": "启动两步验证设置失败。",
+      "invalidCode": "请输入身份验证器 App 生成的 6 位验证码。",
+      "enabled": "两步验证已启用。",
+      "verifyFailed": "验证码校验未通过。请检查身份验证器 App 后重试。",
+      "scanStep": "用 Google Authenticator、1Password 或 Authy 扫描二维码。",
+      "manualKeyStep": "或手动输入密钥：",
+      "uriStep": "或粘贴完整的 <code>otpauth://</code> URI：",
+      "codeStep": "输入 6 位验证码完成绑定。",
+      "verifyEnable": "验证并启用",
+      "verifying": "验证中...",
+      "cancel": "取消"
+    },
+    "disabled": {
+      "done": "两步验证已关闭。",
+      "failed": "关闭 MFA 失败。"
+    },
+    "confirmDisable": {
+      "title": "关闭两步验证？",
+      "message": "关闭后登录将不再需要一次性验证码。你可以随时重新启用。",
+      "confirmLabel": "关闭"
+    },
+    "qr": {
+      "unavailable": "无法生成二维码 —— 请将下方密钥手动粘贴到你的身份验证器。",
+      "ariaLabel": "TOTP 绑定二维码"
+    }
+  },
+  "account": {
+    "title": "服务器与组织",
+    "subtitle": "你的加密密钥指纹、服务器信息与登录凭据。",
+    "gpg": {
+      "title": "OpenPGP 密钥指纹",
+      "intro": "此 OpenPGP 密钥在你的浏览器内完成全部加解密。可向他人公开指纹以核验身份；私钥与 passphrase 永不离开本设备、服务器永不可见。",
+      "locked": "密钥已锁定 —— 请先解锁保险库以查看指纹。",
+      "copyFingerprint": "复制指纹",
+      "keyId": "Key ID",
+      "keyBits": "密钥长度",
+      "bitsValue": "{{bits}} 位"
+    },
+    "server": {
+      "title": "服务器信息",
+      "readonly": "由 JPassbolt API 返回的只读信息。",
+      "loading": "正在加载服务器信息...",
+      "empty": "服务器未返回任何配置信息。"
+    },
+    "orgMfa": {
+      "title": "组织两步验证（管理员）",
+      "totpOn": "TOTP 已开启",
+      "totpOff": "TOTP 已关闭",
+      "wholeOrgTotp": "全组织 TOTP",
+      "hintOn": "本组织内所有用户均可启用 TOTP。",
+      "hintOff": "当前已在全组织范围内关闭 TOTP。",
+      "toggleAria": "切换全组织 TOTP",
+      "loading": "正在加载组织 MFA...",
+      "enabledToast": "已开启全组织 TOTP。",
+      "disabledToast": "已关闭全组织 TOTP。"
+    },
+    "logout": {
+      "label": "退出登录",
+      "hint": "清除本地会话并返回登录页",
+      "button": "退出登录"
+    }
+  },
+  "metadata": {
+    "verifyingAccess": "正在校验权限……",
+    "title": "加密元数据",
+    "subtitle": "用于加密（v5）资源元数据的组织策略与密钥。",
+    "loading": "正在加载加密元数据设置……",
+    "loadFailed": "加载加密元数据设置失败。",
+    "bool": {
+      "yes": "是",
+      "no": "否"
+    },
+    "entities": {
+      "resources": "资源",
+      "folders": "文件夹",
+      "tags": "标签",
+      "comments": "评论"
+    },
+    "v5Create": {
+      "resources": "允许创建 v5 资源",
+      "folders": "允许创建 v5 文件夹",
+      "tags": "允许创建 v5 标签",
+      "comments": "允许创建 v5 评论"
+    },
+    "v4Create": {
+      "resources": "允许创建 v4 资源",
+      "folders": "允许创建 v4 文件夹",
+      "tags": "允许创建 v4 标签",
+      "comments": "允许创建 v4 评论"
+    },
+    "migration": {
+      "upgrade": "允许 v4 → v5 升级",
+      "downgrade": "允许 v5 → v4 降级"
+    },
+    "typesPolicy": {
+      "title": "元数据格式策略",
+      "subtitle": "控制新建项目使用的格式，以及是否允许在组织范围内创建和迁移 v4/v5。",
+      "noActiveKeyWarn": "目前尚无处于激活状态的组织元数据密钥。启用任何 v5 选项都需要一个激活的元数据密钥——在创建之前，服务器将拒绝相关更改。",
+      "defaultFormats": "默认格式",
+      "groupV5Create": "v5 创建",
+      "groupV4Create": "v4 创建",
+      "groupMigration": "迁移",
+      "needsActiveKey": "（需要一个激活的元数据密钥）",
+      "blockedNoKey": "启用 v5 需要一个处于激活状态的组织元数据密钥，请先创建元数据密钥。",
+      "updated": "元数据格式策略已更新。",
+      "updateFailed": "更新元数据格式策略失败。",
+      "savePolicy": "保存策略",
+      "saving": "正在保存……"
+    },
+    "keysSettings": {
+      "title": "元数据密钥设置",
+      "subtitle": "管理元数据密钥在组织范围内的使用与共享方式。",
+      "allowPersonalKeys": "允许使用个人密钥",
+      "allowPersonalKeysHelp": "允许个人项目的元数据使用用户自己的 GPG 密钥（user_key）加密。",
+      "zeroKnowledge": "零知识密钥共享",
+      "zeroKnowledgeHelp": "在服务器始终不持有元数据密钥私钥部分的前提下共享该密钥。",
+      "updated": "元数据密钥设置已更新。",
+      "updateFailed": "更新元数据密钥设置失败。",
+      "saveSettings": "保存设置",
+      "saving": "正在保存……"
+    },
+    "orgKeys": {
+      "title": "组织元数据密钥",
+      "subtitle": "用于加密资源元数据的共享密钥。分发情况显示有多少用户持有每个密钥私钥部分的加密副本。此处暂不支持创建和轮换密钥。",
+      "emptyTitle": "暂无元数据密钥",
+      "emptyDescription": "尚未创建任何组织元数据密钥。在创建之前，v5 加密元数据将保持禁用。",
+      "thFingerprint": "指纹",
+      "thStatus": "状态",
+      "thCreated": "创建时间",
+      "thDistribution": "分发情况",
+      "statusDeleted": "已删除",
+      "statusExpired": "已过期",
+      "statusActive": "激活",
+      "distWithTotal": "{{distributed}} / {{total}} 位用户",
+      "distNoTotal": "{{distributed}} 位用户"
+    }
+  },
+  "common": {
+    "retry": "重试",
+    "edit": "编辑",
+    "cancel": "取消",
+    "show": "显示",
+    "hide": "隐藏"
+  }
+}

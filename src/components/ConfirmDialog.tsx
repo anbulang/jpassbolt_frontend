@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal } from './Modal';
 
 interface ConfirmDialogProps {
@@ -25,14 +26,15 @@ export function ConfirmDialog({
     open,
     title,
     message,
-    confirmLabel = '确认',
-    cancelLabel = '取消',
+    confirmLabel,
+    cancelLabel,
     danger = false,
     loading = false,
     extra,
     onConfirm,
     onCancel,
 }: ConfirmDialogProps) {
+    const { t } = useTranslation('common');
     return (
         <Modal
             open={open}
@@ -42,7 +44,7 @@ export function ConfirmDialog({
             footer={
                 <>
                     <button className="btn btn-secondary" onClick={onCancel} disabled={loading}>
-                        {cancelLabel}
+                        {cancelLabel ?? t('actions.cancel')}
                     </button>
                     <button
                         className="btn btn-primary"
@@ -54,7 +56,7 @@ export function ConfirmDialog({
                                 : undefined
                         }
                     >
-                        {loading ? '处理中…' : confirmLabel}
+                        {loading ? t('components:confirmDialog.processing') : (confirmLabel ?? t('actions.confirm'))}
                     </button>
                 </>
             }

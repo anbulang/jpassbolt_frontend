@@ -41,6 +41,7 @@ import {
 } from 'react';
 import * as openpgp from 'openpgp';
 import type { PrivateKey } from 'openpgp';
+import i18n from '../i18n';
 import { useKey, LS_USER } from './KeyContext';
 import { encryptMessage, fingerprintOf, verifyArmoredKeyFingerprint } from '../gpg';
 import { listMetadataKeys } from '../services/metadata';
@@ -93,6 +94,11 @@ function errMessage(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message) return err.message;
   if (typeof err === 'string' && err) return err;
   return fallback;
+}
+
+/** Localized crypto-layer message helper (uses the i18n singleton, like i18n/errors.ts). */
+function tc(key: string, opts?: Record<string, unknown>): string {
+  return i18n.t(`crypto:${key}`, opts ?? {});
 }
 
 /** Resolve the current user's id from the cached LS_USER blob (best-effort). */
@@ -226,7 +232,7 @@ export function MetadataKeyProvider({ children }: { children: ReactNode }): JSX.
       if (!isCurrent()) return;
       const blob = narrowPrivateKeyBlob(cleartext);
       if (!blob) {
-        throw new Error('The shared metadata private key blob is malformed.');
+        throw new Error(tc('metadata.errors.blobMalformed'));
       }
 
       // Read the shared key's PRIVATE half, decrypting it if it carries a passphrase.
@@ -238,7 +244,7 @@ export function MetadataKeyProvider({ children }: { children: ReactNode }): JSX.
         try {
           priv = await openpgp.decryptKey({ privateKey: priv, passphrase: '' });
         } catch {
-          throw new Error('The shared metadata private key requires a passphrase we do not have.');
+          throw new Error(tc('metadata.errors.requiresPassphrase'));
         }
       }
 
@@ -253,17 +259,13 @@ export function MetadataKeyProvider({ children }: { children: ReactNode }): JSX.
       if (!isCurrent()) return;
       const declaredFp = blob.fingerprint.replace(/\s+/g, '').toLowerCase();
       if (!declaredFp || declaredFp !== recoveredFp) {
-        throw new Error(
-          'Shared metadata private key fingerprint mismatch: the recovered key does not match its declared fingerprint; refusing to trust it.'
-        );
+        throw new Error(tc('metadata.errors.fingerprintMismatchDeclared'));
       }
       const activeFp = active.fingerprint
         ? active.fingerprint.replace(/\s+/g, '').toLowerCase()
         : '';
       if (!activeFp || activeFp !== recoveredFp) {
-        throw new Error(
-          'Shared metadata private key fingerprint mismatch: the recovered key does not match the active metadata key record; refusing to trust it.'
-        );
+        throw new Error(tc('metadata.errors.fingerprintMismatchActive'));
       }
 
       // The vault may have locked while the readPrivateKey/decryptKey/fingerprint
@@ -286,7 +288,7 @@ export function MetadataKeyProvider({ children }: { children: ReactNode }): JSX.
       setAvailable(false);
       setActiveKeyId(null);
       setReady(true);
-      setLoadError(errMessage(err, 'Failed to load the shared metadata key.'));
+      setLoadError(errMessage(err, tc('metadata.errors.loadFailed')));
     }
   }, [decrypt]);
 
@@ -311,16 +313,14 @@ export function MetadataKeyProvider({ children }: { children: ReactNode }): JSX.
     async (armoredMetadata: string): Promise<string> => {
       const priv = sharedPrivateKeyRef.current;
       if (!priv) {
-        throw new Error(
-          'The shared metadata key is unavailable. Unlock your vault and ensure a metadata key is configured.'
-        );
+        throw new Error(tc('metadata.errors.keyUnavailable'));
       }
       const message = await openpgp.readMessage({ armoredMessage: armoredMetadata });
       try {
         const { data } = await openpgp.decrypt({ message, decryptionKeys: priv });
         return data as string;
       } catch (err: unknown) {
-        throw new Error(errMessage(err, 'Failed to decrypt resource metadata.'));
+        throw new Error(errMessage(err, tc('metadata.errors.decryptMetadata')));
       }
     },
     []
@@ -332,14 +332,14 @@ export function MetadataKeyProvider({ children }: { children: ReactNode }): JSX.
     ): Promise<{ metadata: string; metadata_key_id: string; metadata_key_type: MetadataKeyType }> => {
       const active = activeKeyRef.current;
       if (!active || !sharedPrivateKeyRef.current) {
-        throw new Error('No usable shared metadata key is available to encrypt with.');
+        throw new Error(tc('metadata.errors.noUsableKey'));
       }
       // Server-substitution defence: verify the PUBLIC armored key against its
       // reported fingerprint BEFORE encrypting to it (identical to ShareDialog).
       await verifyArmoredKeyFingerprint(
         active.armored_key,
         active.fingerprint,
-        'the shared metadata key'
+        tc('metadata.errors.sharedKeyName')
       );
       const metadata = await encryptMessage(plaintextJson, [active.armored_key]);
       return {

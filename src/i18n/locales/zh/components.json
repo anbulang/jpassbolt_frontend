@@ -1,0 +1,148 @@
+{
+  "confirmDialog": {
+    "processing": "处理中…"
+  },
+  "toast": {
+    "dismiss": "关闭通知"
+  },
+  "avatar": {
+    "alt": "用户头像"
+  },
+  "permission": {
+    "read": "只读",
+    "canUpdate": "可编辑",
+    "owner": "拥有者",
+    "level": "级别 {{type}}"
+  },
+  "passwordField": {
+    "placeholder": "密码",
+    "hide": "隐藏",
+    "reveal": "显示",
+    "copyToClipboard": "复制到剪贴板",
+    "generate": "生成",
+    "generatePassword": "生成密码",
+    "strength": {
+      "strong": "强",
+      "fair": "中",
+      "weak": "弱"
+    }
+  },
+  "keyFile": {
+    "select": "选择密钥文件"
+  },
+  "mfa": {
+    "title": "两步验证",
+    "verified": "验证通过",
+    "entering": "正在进入保险库…",
+    "prompt": "输入身份验证器上的 6 位验证码",
+    "verifyingChallenge": "校验挑战响应…",
+    "openAuthenticator": "打开身份验证器 App 获取动态验证码",
+    "backToLogin": "返回登录",
+    "errors": {
+      "tooManyAttempts": "尝试过于频繁，请稍后再试",
+      "invalidCode": "验证码错误，请重试"
+    }
+  },
+  "folderTree": {
+    "quickAccess": "快速访问",
+    "allCredentials": "全部凭据",
+    "allCredentialsRoot": "全部凭据（根）",
+    "unknownFolder": "（未知文件夹）",
+    "favorites": "收藏",
+    "foldersLabel": "文件夹",
+    "loading": "加载文件夹…",
+    "noFolders": "还没有文件夹",
+    "newFolder": "新建文件夹",
+    "renameFolder": "重命名文件夹",
+    "moveFolder": "移动文件夹",
+    "moveTitle": "移动「{{name}}」",
+    "deleteFolder": "删除文件夹",
+    "folderName": "文件夹名称",
+    "namePlaceholder": "例如：工作",
+    "parentFolder": "上级文件夹",
+    "destination": "目标位置",
+    "create": "创建",
+    "creating": "创建中…",
+    "moving": "移动中…",
+    "collapse": "收起",
+    "expand": "展开",
+    "sharedFolder": "共享文件夹",
+    "folderActions": "文件夹操作",
+    "menu": {
+      "rename": "重命名",
+      "move": "移动…",
+      "moveAction": "移动"
+    },
+    "deleteConfirm": {
+      "before": "删除文件夹",
+      "after": "？此操作不可撤销。"
+    },
+    "deleteCascade": "同时删除其内容（凭据与子文件夹）。关闭时，可写内容会被移动到根目录。",
+    "toast": {
+      "created": "已创建文件夹「{{name}}」。",
+      "renamed": "文件夹已重命名。",
+      "moved": "已将「{{name}}」移动到 {{destination}}。",
+      "deleted": "已删除「{{name}}」。",
+      "deletedWithContents": "已删除「{{name}}」及其内容。",
+      "resourceMoved": "已将凭据移动到 {{destination}}。"
+    }
+  },
+  "share": {
+    "title": "共享资源",
+    "titleNamed": "共享「{{name}}」",
+    "accessorCount": "{{count}} 个访问者",
+    "simulate": "模拟",
+    "simulating": "模拟中…",
+    "simulateTooltip": "预览谁将获得或失去访问权限",
+    "encryptingAndSharing": "加密并共享中…",
+    "encryptAndShare": "加密并共享",
+    "searchPlaceholder": "按姓名、用户名或群组搜索…",
+    "searching": "搜索中…",
+    "noMatches": "没有匹配项。",
+    "user": "用户",
+    "group": "群组",
+    "memberCount": "{{count}} 名成员",
+    "whoHasAccess": "谁有访问权限",
+    "loadingAccessList": "正在加载当前访问列表…",
+    "noAccessYet": "目前还没有人拥有访问权限。在上方搜索以与成员或群组共享。",
+    "undo": "撤销",
+    "removeAro": "移除 {{name}}",
+    "removeAccess": "移除访问权限",
+    "lockedBanner": "保险库已锁定。请用 passphrase 解锁后再共享 —— 为新收件人重新加密密文需要你的私钥保留在内存中。",
+    "permission": {
+      "read": "只读",
+      "update": "可编辑",
+      "owner": "拥有者"
+    },
+    "chip": {
+      "added": "新增",
+      "removed": "移除"
+    },
+    "reencrypt": {
+      "head": "将为这些新收件人重新加密密文",
+      "sub": "新增 {{count}} 个对象 · 每份密文都使用收件人自己的公钥单独封装，你的私钥与 passphrase 始终留在本地，永不离开设备。"
+    },
+    "simulation": {
+      "title": "模拟结果",
+      "gainAccess": "获得访问：",
+      "loseAccess": "失去访问：",
+      "none": "无"
+    },
+    "toast": {
+      "sharedNamed": "「{{name}}」已成功共享。",
+      "sharedUpdated": "共享已成功更新。",
+      "applyFailed": "无法应用此次共享。"
+    },
+    "errors": {
+      "vaultLocked": "保险库已锁定。请用 passphrase 解锁后再共享。",
+      "noChanges": "没有可应用的变更。",
+      "noPublicKey": "未找到 {{who}} 的公钥，暂时无法授予其访问权限。",
+      "cannotGetKey": "无法获取 {{who}} 的密钥。",
+      "cannotLoadGroupMembers": "无法加载群组「{{group}}」的成员。",
+      "cannotVerifyKey": "无法验证 {{who}} 的密钥（群组「{{group}}」）。",
+      "cannotGetKeyInGroup": "无法获取 {{who}} 的密钥（群组「{{group}}」）。",
+      "missingRecipientKeys": "无法共享 — 缺少收件人密钥：{{details}}",
+      "cannotReadSecret": "无法读取该资源现有的密文。"
+    }
+  }
+}

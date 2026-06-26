@@ -37,6 +37,7 @@ import {
     useState,
     type ReactNode,
 } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     AlertTriangle,
     Lock as LockIcon,
@@ -60,6 +61,7 @@ import { getSecretForResource } from '../services/secrets';
 import { getUser } from '../services/users';
 import { getGroup } from '../services/groups';
 import { verifyArmoredKeyFingerprint } from '../gpg';
+import { describeApiError } from '../i18n/errors';
 
 import {
     PERMISSION,
@@ -136,10 +138,10 @@ interface DraftRow {
 
 const DEBOUNCE_MS = 300;
 
-const PERMISSION_OPTIONS: { value: PermissionType; label: string }[] = [
-    { value: PERMISSION.READ, label: '只读' },
-    { value: PERMISSION.UPDATE, label: '可编辑' },
-    { value: PERMISSION.OWNER, label: '拥有者' },
+const PERMISSION_OPTIONS: { value: PermissionType; labelKey: string }[] = [
+    { value: PERMISSION.READ, labelKey: 'share.permission.read' },
+    { value: PERMISSION.UPDATE, labelKey: 'share.permission.update' },
+    { value: PERMISSION.OWNER, labelKey: 'share.permission.owner' },
 ];
 
 function errMessage(err: unknown, fallback: string): string {
@@ -154,7 +156,9 @@ function errMessage(err: unknown, fallback: string): string {
     return fallback;
 }
 
-function aroDisplay(aro: Aro): { label: string; sublabel?: string } {
+type TFunc = (key: string, opts?: Record<string, unknown>) => string;
+
+function aroDisplay(aro: Aro, t: TFunc): { label: string; sublabel?: string } {
     if (isUserAro(aro)) {
         const p = aro.profile;
         const full = p ? `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() : '';
@@ -164,7 +168,7 @@ function aroDisplay(aro: Aro): { label: string; sublabel?: string } {
     const count = group.user_count;
     return {
         label: group.name,
-        sublabel: typeof count === 'number' ? `${count} 名成员` : '群组',
+        sublabel: typeof count === 'number' ? t('share.memberCount', { count }) : t('share.group'),
     };
 }
 
@@ -174,7 +178,7 @@ function aroDisplay(aro: Aro): { label: string; sublabel?: string } {
  * falling back to a UUID placeholder otherwise (the resolver effect replaces it
  * with a name). Always marked isNew:false / deleted:false — it's existing ACL.
  */
-function seedRowFromPermission(p: Permission | PermissionWithAro): DraftRow {
+function seedRowFromPermission(p: Permission | PermissionWithAro, t: TFunc): DraftRow {
     const embedded = p as PermissionWithAro;
     const base: DraftRow = {
         permissionId: p.id,
@@ -187,11 +191,11 @@ function seedRowFromPermission(p: Permission | PermissionWithAro): DraftRow {
         // Default to the UUID as a placeholder; replaced below if we have an
         // embedded object, or later by the resolver effect (never show raw UUIDs).
         label: p.aro_foreign_key,
-        sublabel: p.aro === 'Group' ? '群组' : '用户',
+        sublabel: p.aro === 'Group' ? t('share.group') : t('share.user'),
     };
 
     if (p.aro === 'User' && embedded.user) {
-        const { label, sublabel } = aroDisplay(embedded.user);
+        const { label, sublabel } = aroDisplay(embedded.user, t);
         const profile = embedded.user.profile;
         return {
             ...base,
@@ -203,7 +207,7 @@ function seedRowFromPermission(p: Permission | PermissionWithAro): DraftRow {
         };
     }
     if (p.aro === 'Group' && embedded.group) {
-        return { ...base, label: embedded.group.name, sublabel: '群组' };
+        return { ...base, label: embedded.group.name, sublabel: t('share.group') };
     }
     return base;
 }
@@ -219,6 +223,7 @@ export function ShareDialog({
     onClose,
     onShared,
 }: ShareDialogProps) {
+    const { t } = useTranslation('components');
     const toast = useToast();
     const { isLocked, decrypt, encryptFor } = useKey();
 
@@ -279,7 +284,7 @@ export function ShareDialog({
         // Caller pre-loaded the ACL: seed synchronously and skip the fetch.
         if (existingPermissions) {
             setLoadingPermissions(false);
-            setRows(existingPermissions.map(seedRowFromPermission));
+            setRows(existingPermissions.map((p) => seedRowFromPermission(p, t)));
             return;
         }
 
@@ -302,15 +307,13 @@ export function ShareDialog({
                     containGroup: true,
                 });
                 if (cancelled) return;
-                setRows(perms.map(seedRowFromPermission));
+                setRows(perms.map((p) => seedRowFromPermission(p, t)));
                 setPermissionsError(null);
             } catch (err: unknown) {
                 if (cancelled) return;
                 // Don't block sharing if the ACL couldn't be read — the user can
                 // still add people; we just couldn't show the current access.
-                setPermissionsError(
-                    errMessage(err, '无法加载该资源的当前访问列表。'),
-                );
+                setPermissionsError(describeApiError(err));
                 setRows([]);
             } finally {
                 if (!cancelled) setLoadingPermissions(false);
@@ -321,7 +324,7 @@ export function ShareDialog({
         };
         // Re-seed whenever the dialog opens for a (possibly) different resource or
         // a caller swaps in a different pre-loaded permission set.
-    }, [open, resourceId, existingPermissions]);
+    }, [open, resourceId, existingPermissions, t]);
 
     // -----------------------------------------------------------------------
     // Resolve human-readable names for any seeded existing-permission rows whose
@@ -344,10 +347,10 @@ export function ShareDialog({
                     try {
                         if (r.aro === 'User') {
                             const u = await getUser(r.aroForeignKey);
-                            resolved.set(r.aroForeignKey, aroDisplay(u));
+                            resolved.set(r.aroForeignKey, aroDisplay(u, t));
                         } else {
                             const g = await getGroup(r.aroForeignKey);
-                            resolved.set(r.aroForeignKey, aroDisplay(g));
+                            resolved.set(r.aroForeignKey, aroDisplay(g, t));
                         }
                     } catch {
                         // Leave the placeholder UUID if the lookup fails.
@@ -396,7 +399,7 @@ export function ShareDialog({
                 setSearchError(null);
             } catch (err: unknown) {
                 if (seq !== searchSeq.current) return;
-                setSearchError(errMessage(err, '搜索失败，请重试。'));
+                setSearchError(describeApiError(err));
                 setResults([]);
             } finally {
                 if (seq === searchSeq.current) setSearching(false);
@@ -412,7 +415,7 @@ export function ShareDialog({
         const isUser = isUserAro(aro);
         const aroType: 'User' | 'Group' = isUser ? 'User' : 'Group';
         const aroForeignKey = aro.id;
-        const { label, sublabel } = aroDisplay(aro);
+        const { label, sublabel } = aroDisplay(aro, t);
 
         setRows((prev) => {
             // If it already exists in the draft, un-delete / focus it instead of duplicating.
@@ -441,7 +444,7 @@ export function ShareDialog({
         setApplyError(null);
         setQuery('');
         setResults([]);
-    }, []);
+    }, [t]);
 
     const changeRowType = useCallback((idx: number, type: PermissionType) => {
         setRows((prev) => {
@@ -540,7 +543,7 @@ export function ShareDialog({
             const result = await simulateShare(resourceId, perms);
             setSimulation(result);
         } catch (err: unknown) {
-            setApplyError(errMessage(err, '模拟失败。'));
+            setApplyError(describeApiError(err));
             setSimulation(null);
         } finally {
             setSimulating(false);
@@ -574,7 +577,7 @@ export function ShareDialog({
                 missing.map(async (id) => {
                     try {
                         const u = await getUser(id);
-                        next[id] = aroDisplay(u).label;
+                        next[id] = aroDisplay(u, t).label;
                     } catch {
                         // Leave it unresolved; the preview falls back to a short id.
                     }
@@ -599,13 +602,13 @@ export function ShareDialog({
         const armored = user.gpgkey?.armored_key;
         const who = user.username || userId;
         if (!armored) {
-            throw new Error(`未找到 ${who} 的公钥，暂时无法授予其访问权限。`);
+            throw new Error(t('share.errors.noPublicKey', { who }));
         }
         // E2EE: verify the armored key matches the server-reported fingerprint before
         // we ever encrypt a secret to it (server is untrusted on key distribution).
         await verifyArmoredKeyFingerprint(armored, user.gpgkey?.fingerprint, who);
         return armored;
-    }, []);
+    }, [t]);
 
     // -----------------------------------------------------------------------
     // Apply: re-encrypt the secret once per recipient and PUT the share.
@@ -613,11 +616,11 @@ export function ShareDialog({
     const handleApply = useCallback(async () => {
         if (!resourceId) return;
         if (isLocked) {
-            setApplyError('保险库已锁定。请用 passphrase 解锁后再共享。');
+            setApplyError(t('share.errors.vaultLocked'));
             return;
         }
         if (!hasChanges) {
-            setApplyError('没有可应用的变更。');
+            setApplyError(t('share.errors.noChanges'));
             return;
         }
 
@@ -641,7 +644,7 @@ export function ShareDialog({
                         const key = await resolveUserKey(row.aroForeignKey);
                         recipientKeys.set(row.aroForeignKey, key);
                     } catch (err: unknown) {
-                        recipientErrors.push(errMessage(err, `无法获取 ${row.label} 的密钥。`));
+                        recipientErrors.push(errMessage(err, t('share.errors.cannotGetKey', { who: row.label })));
                     }
                 } else {
                     // Group: fetch members + their gpgkeys.
@@ -654,7 +657,7 @@ export function ShareDialog({
                         });
                     } catch (err: unknown) {
                         recipientErrors.push(
-                            errMessage(err, `无法加载群组「${row.label}」的成员。`),
+                            errMessage(err, t('share.errors.cannotLoadGroupMembers', { group: row.label })),
                         );
                         continue;
                     }
@@ -678,7 +681,7 @@ export function ShareDialog({
                                 continue;
                             } catch (err: unknown) {
                                 recipientErrors.push(
-                                    errMessage(err, `无法验证 ${who} 的密钥（群组「${row.label}」）。`),
+                                    errMessage(err, t('share.errors.cannotVerifyKey', { who, group: row.label })),
                                 );
                                 continue;
                             }
@@ -688,7 +691,7 @@ export function ShareDialog({
                             recipientKeys.set(memberId, key);
                         } catch (err: unknown) {
                             recipientErrors.push(
-                                errMessage(err, `无法获取 ${who} 的密钥（群组「${row.label}」）。`),
+                                errMessage(err, t('share.errors.cannotGetKeyInGroup', { who, group: row.label })),
                             );
                         }
                     }
@@ -700,7 +703,7 @@ export function ShareDialog({
             // correctly-encrypted secret would silently lock that user out.
             if (recipientErrors.length > 0) {
                 setApplyError(
-                    `无法共享 — 缺少收件人密钥：${recipientErrors.join(' ')}`,
+                    t('share.errors.missingRecipientKeys', { details: recipientErrors.join(' ') }),
                 );
                 setApplying(false);
                 return;
@@ -712,7 +715,7 @@ export function ShareDialog({
                 // 1. Fetch + decrypt the existing secret with the in-memory private key.
                 const existing = await getSecretForResource(resourceId);
                 if (!existing?.data) {
-                    throw new Error('无法读取该资源现有的密文。');
+                    throw new Error(t('share.errors.cannotReadSecret'));
                 }
                 const plaintext = await decrypt(existing.data);
 
@@ -730,13 +733,15 @@ export function ShareDialog({
             await applyShare('resource', resourceId, { permissions, secrets });
 
             toast.success(
-                resourceName ? `「${resourceName}」已成功共享。` : '共享已成功更新。',
+                resourceName
+                    ? t('share.toast.sharedNamed', { name: resourceName })
+                    : t('share.toast.sharedUpdated'),
             );
             onShared?.();
             onClose(true);
         } catch (err: unknown) {
-            setApplyError(errMessage(err, '应用共享失败。'));
-            toast.error('无法应用此次共享。');
+            setApplyError(describeApiError(err));
+            toast.error(t('share.toast.applyFailed'));
         } finally {
             setApplying(false);
         }
@@ -753,6 +758,7 @@ export function ShareDialog({
         toast,
         onShared,
         onClose,
+        t,
     ]);
 
     if (!open) return null;
@@ -762,26 +768,26 @@ export function ShareDialog({
     return (
         <Modal
             open={open}
-            title={resourceName ? `共享「${resourceName}」` : '共享资源'}
+            title={resourceName ? t('share.titleNamed', { name: resourceName }) : t('share.title')}
             onClose={() => !busy && onClose(false)}
             maxWidth={620}
             closeOnBackdrop={!busy}
             footer={
                 <>
                     <span style={{ fontSize: 12, color: 'var(--text-3)', marginRight: 'auto' }}>
-                        {rows.filter((r) => !r.deleted).length} 个访问者
+                        {t('share.accessorCount', { count: rows.filter((r) => !r.deleted).length })}
                     </span>
                     <button className="btn" onClick={() => onClose(false)} disabled={busy}>
-                        取消
+                        {t('common:actions.cancel')}
                     </button>
                     <button
                         className="btn"
                         onClick={handleSimulate}
                         disabled={busy || simulating || !hasChanges}
-                        title="预览谁将获得或失去访问权限"
+                        title={t('share.simulateTooltip')}
                     >
                         {simulating ? <Spinner size={16} /> : null}
-                        {simulating ? '模拟中…' : '模拟'}
+                        {simulating ? t('share.simulating') : t('share.simulate')}
                     </button>
                     <button
                         className="btn primary"
@@ -793,14 +799,14 @@ export function ShareDialog({
                         ) : newlyAdded.length > 0 ? (
                             <RefreshCw size={16} />
                         ) : null}
-                        {applying ? '加密并共享中…' : newlyAdded.length > 0 ? '加密并共享' : '保存'}
+                        {applying ? t('share.encryptingAndSharing') : newlyAdded.length > 0 ? t('share.encryptAndShare') : t('common:actions.save')}
                     </button>
                 </>
             }
         >
             {isLocked && (
                 <Banner variant="warning" icon={<LockIcon size={16} />}>
-                    保险库已锁定。请用 passphrase 解锁后再共享 —— 为新收件人重新加密密文需要你的私钥保留在内存中。
+                    {t('share.lockedBanner')}
                 </Banner>
             )}
 
@@ -816,7 +822,7 @@ export function ShareDialog({
                     <Search />
                     <input
                         id="share-search"
-                        placeholder="按姓名、用户名或群组搜索…"
+                        placeholder={t('share.searchPlaceholder')}
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         autoComplete="off"
@@ -829,7 +835,7 @@ export function ShareDialog({
                     <div className="aro-results">
                         {searching && (
                             <div style={{ padding: '11px 12px', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-3)', fontSize: 13 }}>
-                                <Spinner size={14} /> 搜索中…
+                                <Spinner size={14} /> {t('share.searching')}
                             </div>
                         )}
                         {!searching && searchError && (
@@ -839,14 +845,14 @@ export function ShareDialog({
                         )}
                         {!searching && !searchError && results.length === 0 && (
                             <div style={{ padding: '11px 12px', color: 'var(--text-3)', fontSize: 13 }}>
-                                没有匹配项。
+                                {t('share.noMatches')}
                             </div>
                         )}
                         {!searching &&
                             !searchError &&
                             results.map((aro) => {
                                 const isUser = isUserAro(aro);
-                                const { label, sublabel } = aroDisplay(aro);
+                                const { label, sublabel } = aroDisplay(aro, t);
                                 const profile = isUser ? (aro as User).profile : null;
                                 return (
                                     <button
@@ -875,7 +881,7 @@ export function ShareDialog({
                                             {sublabel && <span className="ae">{sublabel}</span>}
                                         </span>
                                         <Badge variant={isUser ? 'primary' : 'default'} icon={<UsersIcon size={11} />}>
-                                            {isUser ? '用户' : '群组'}
+                                            {isUser ? t('share.user') : t('share.group')}
                                         </Badge>
                                         <span className="add">
                                             <Plus />
@@ -890,7 +896,7 @@ export function ShareDialog({
             {/* ---- Current / draft permissions ---- */}
             <div style={{ marginBottom: 8 }}>
                 <div style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 500, marginBottom: 8 }}>
-                    谁有访问权限
+                    {t('share.whoHasAccess')}
                 </div>
                 {permissionsError && (
                     <div style={{ marginBottom: 8 }}>
@@ -901,11 +907,11 @@ export function ShareDialog({
                 )}
                 {loadingPermissions ? (
                     <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text-3)', fontSize: 13, border: '1px dashed var(--border)', borderRadius: 'var(--r)' }}>
-                        <Spinner size={14} /> 正在加载当前访问列表…
+                        <Spinner size={14} /> {t('share.loadingAccessList')}
                     </div>
                 ) : rows.length === 0 ? (
                     <div style={{ padding: '16px', color: 'var(--text-3)', fontSize: 13, textAlign: 'center', border: '1px dashed var(--border)', borderRadius: 'var(--r)' }}>
-                        目前还没有人拥有访问权限。在上方搜索以与成员或群组共享。
+                        {t('share.noAccessYet')}
                     </div>
                 ) : (
                     <div className="matrix">
@@ -941,12 +947,12 @@ export function ShareDialog({
                                         {row.label}
                                         {row.isNew && !row.deleted && (
                                             <span className="chip green" style={{ padding: '1px 6px' }}>
-                                                新增
+                                                {t('share.chip.added')}
                                             </span>
                                         )}
                                         {row.deleted && (
                                             <span className="chip red" style={{ padding: '1px 6px' }}>
-                                                移除
+                                                {t('share.chip.removed')}
                                             </span>
                                         )}
                                     </span>
@@ -965,7 +971,7 @@ export function ShareDialog({
                                             disabled={busy || row.deleted}
                                             onClick={() => changeRowType(idx, opt.value)}
                                         >
-                                            {opt.label}
+                                            {t(opt.labelKey)}
                                         </button>
                                     ))}
                                 </div>
@@ -977,7 +983,7 @@ export function ShareDialog({
                                         onClick={() => undoRemove(idx)}
                                         disabled={busy}
                                     >
-                                        撤销
+                                        {t('share.undo')}
                                     </button>
                                 ) : (
                                     <button
@@ -985,8 +991,8 @@ export function ShareDialog({
                                         className="rm-aro"
                                         onClick={() => removeRow(idx)}
                                         disabled={busy}
-                                        aria-label={`移除 ${row.label}`}
-                                        title="移除访问权限"
+                                        aria-label={t('share.removeAro', { name: row.label })}
+                                        title={t('share.removeAccess')}
                                     >
                                         <XIcon />
                                     </button>
@@ -1001,10 +1007,10 @@ export function ShareDialog({
             {newlyAdded.length > 0 && (
                 <div className="reencrypt">
                     <div className="re-head">
-                        <RefreshCw /> 将为这些新收件人重新加密密文
+                        <RefreshCw /> {t('share.reencrypt.head')}
                     </div>
                     <div className="re-sub">
-                        新增 {newlyAdded.length} 个对象 · 每份密文都使用收件人自己的公钥单独封装，你的私钥与 passphrase 始终留在本地，永不离开设备。
+                        {t('share.reencrypt.sub', { count: newlyAdded.length })}
                     </div>
                 </div>
             )}
@@ -1025,6 +1031,7 @@ function SimulationPreview({
     result: ShareSimulateResult;
     names: Record<string, string>;
 }) {
+    const { t } = useTranslation('components');
     const added = result.changes?.added ?? [];
     const removed = result.changes?.removed ?? [];
     // Prefer a resolved display name; fall back to a short id only when unknown.
@@ -1035,12 +1042,12 @@ function SimulationPreview({
             style={{ marginTop: 12, fontSize: 13 }}
         >
             <div style={{ color: 'var(--text-2)', fontWeight: 500, marginBottom: 10 }}>
-                模拟结果
+                {t('share.simulation.title')}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                <span style={{ color: 'var(--text-3)', marginRight: 4 }}>获得访问：</span>
+                <span style={{ color: 'var(--text-3)', marginRight: 4 }}>{t('share.simulation.gainAccess')}</span>
                 {added.length === 0 ? (
-                    <span style={{ color: 'var(--text-3)' }}>无</span>
+                    <span style={{ color: 'var(--text-3)' }}>{t('share.simulation.none')}</span>
                 ) : (
                     added.map((a) => (
                         <span key={`a-${a.User.id}`} className="chip green">
@@ -1050,9 +1057,9 @@ function SimulationPreview({
                 )}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-                <span style={{ color: 'var(--text-3)', marginRight: 4 }}>失去访问：</span>
+                <span style={{ color: 'var(--text-3)', marginRight: 4 }}>{t('share.simulation.loseAccess')}</span>
                 {removed.length === 0 ? (
-                    <span style={{ color: 'var(--text-3)' }}>无</span>
+                    <span style={{ color: 'var(--text-3)' }}>{t('share.simulation.none')}</span>
                 ) : (
                     removed.map((r) => (
                         <span key={`r-${r.User.id}`} className="chip red">
