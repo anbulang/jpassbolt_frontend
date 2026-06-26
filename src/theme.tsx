@@ -44,10 +44,12 @@ const DEFAULTS: Prefs = {
   density: 'comfortable',
   revealSecs: 20,
   burnSecs: 30,
-  idleSecs: 300,
+  // 30 minutes — aligns the vault auto-lock window with Passbolt's ~half-hour
+  // passphrase/session feel (was 300s = 5 min, which users read as "logged out").
+  idleSecs: 1800,
 };
 
-const LS_PREFS = 'jpassbolt_prefs';
+export const LS_PREFS = 'jpassbolt_prefs';
 
 function readPrefs(): Prefs {
   try {
@@ -58,6 +60,15 @@ function readPrefs(): Prefs {
   } catch {
     return DEFAULTS;
   }
+}
+
+/**
+ * Read the configured idle-lock seconds from persisted prefs, for non-React
+ * callers (e.g. the passphrase cache TTL in KeyContext). Returns the same value
+ * the live ThemeProvider would expose. 0 means "auto-lock disabled".
+ */
+export function readIdleSecs(): number {
+  return readPrefs().idleSecs;
 }
 
 interface ThemeContextValue {

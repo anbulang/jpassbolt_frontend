@@ -37,6 +37,12 @@ import * as openpgp from 'openpgp';
 import type { PrivateKey } from 'openpgp';
 import { Lock, KeyRound, Eye, EyeOff, ShieldCheck, Unlock, AlertTriangle } from 'lucide-react';
 import { encryptMessage } from '../gpg';
+import { readIdleSecs } from '../theme';
+import {
+    cachePassphrase,
+    clearCachedPassphrase,
+    readCachedPassphrase,
+} from './passphraseCache';
 
 // ---------------------------------------------------------------------------
 // localStorage key constants (single source of truth for the crypto layer)
@@ -52,6 +58,13 @@ export const LS_PUBLIC_KEY = 'jpassbolt_public_key_armored';
 export interface KeyContextValue {
     /** True when authenticated (JWT present) but no decrypted key is in memory (e.g. after hard refresh). */
     isLocked: boolean;
+    /**
+     * True only during the brief window on mount when we are auto-unlocking from a
+     * cached passphrase (survive-refresh). LockGate shows a neutral "restoring
+     * session" spinner instead of the passphrase form while this is true, so a
+     * refresh that will auto-unlock never flashes the unlock prompt.
+     */
+    isRestoring: boolean;
     /** Own armored public key from localStorage (jpassbolt_public_key_armored), or null if absent. */
     ownPublicKeyArmored: string | null;
     /** Fingerprint of the unlocked key (lowercase hex), or null while locked. */
@@ -101,6 +114,21 @@ function readStoredPublicKey(): string | null {
     return localStorage.getItem(LS_PUBLIC_KEY);
 }
 
+/**
+ * Synchronous, side-effect-light check for whether a page refresh can auto-unlock
+ * the vault from the cached passphrase: we need to be authenticated (JWT present),
+ * have a passphrase-protected armored key to decrypt, and hold a non-expired
+ * cached passphrase. Used to initialize isRestoring so LockGate shows a spinner
+ * (not the passphrase form) while the async unlock runs.
+ */
+function canAutoUnlock(): boolean {
+    return (
+        localStorage.getItem(LS_JWT) != null &&
+        readStoredPrivateKey() != null &&
+        readCachedPassphrase() != null
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -116,6 +144,10 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
     // `isLocked` flips to false only after a successful unlock; it is the single source of
     // truth the UI watches. We derive the initial value: locked if no key is in memory yet.
     const [isLocked, setIsLocked] = useState<boolean>(true);
+    // True while the mount-time auto-unlock from the cached passphrase is in flight.
+    // Initialized synchronously so the very first render already knows a refresh will
+    // auto-unlock (LockGate then shows a spinner, never the passphrase form).
+    const [isRestoring, setIsRestoring] = useState<boolean>(() => canAutoUnlock());
     // Bump to force a re-read of hasStoredKey after setArmoredKeys/clear.
     const [storedKeyVersion, setStoredKeyVersion] = useState(0);
 
@@ -139,12 +171,16 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
     );
 
     const lock = useCallback(() => {
+        // Locking the vault must also forget the cached passphrase, otherwise a
+        // refresh right after an idle/manual lock would silently auto-unlock again.
+        clearCachedPassphrase();
         privateKeyRef.current = null;
         setOwnFingerprint(null);
         setIsLocked(true);
     }, []);
 
     const clear = useCallback(() => {
+        clearCachedPassphrase();
         privateKeyRef.current = null;
         localStorage.removeItem(LS_PRIVATE_KEY);
         localStorage.removeItem(LS_PUBLIC_KEY);
@@ -208,7 +244,45 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
         }
 
         setIsLocked(false);
+
+        // Cache the passphrase so a page refresh can re-unlock without re-typing,
+        // for as long as the idle-lock window (idleSecs). idleSecs === 0 ("never
+        // auto-lock") caches with no expiry (cleared on tab close / lock / logout).
+        const ttl = readIdleSecs();
+        cachePassphrase(passphrase, ttl > 0 ? ttl : null);
     }, []);
+
+    // On mount, if a non-expired cached passphrase exists (survive-refresh), unlock
+    // automatically from it. Runs exactly once; guarded so React StrictMode's double
+    // invoke in dev does not fire two concurrent unlocks. On failure the cache is
+    // dropped and LockGate falls back to the passphrase form.
+    const didBootstrap = useRef(false);
+    useEffect(() => {
+        if (didBootstrap.current) return;
+        didBootstrap.current = true;
+        if (!canAutoUnlock()) {
+            setIsRestoring(false);
+            return;
+        }
+        const cached = readCachedPassphrase();
+        if (!cached) {
+            setIsRestoring(false);
+            return;
+        }
+        let cancelled = false;
+        void (async () => {
+            try {
+                await unlock(cached);
+            } catch {
+                clearCachedPassphrase();
+            } finally {
+                if (!cancelled) setIsRestoring(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [unlock]);
 
     const decrypt = useCallback(async (armoredMessage: string): Promise<string> => {
         const privateKey = privateKeyRef.current;
@@ -256,6 +330,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
     const value = useMemo<KeyContextValue>(
         () => ({
             isLocked,
+            isRestoring,
             ownPublicKeyArmored,
             ownFingerprint,
             hasStoredKey,
@@ -269,6 +344,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
         }),
         [
             isLocked,
+            isRestoring,
             ownPublicKeyArmored,
             ownFingerprint,
             hasStoredKey,
@@ -307,11 +383,15 @@ export function useKey(): KeyContextValue {
  * If already unlocked (or not authenticated), it simply renders children.
  */
 export function LockGate({ children }: { children: ReactNode }): JSX.Element | null {
-    const { isLocked, hasStoredKey, unlock } = useKey();
+    const { isLocked, isRestoring, hasStoredKey, unlock } = useKey();
     const [passphrase, setPassphrase] = useState('');
     const [show, setShow] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+
+    // Show the spinner card (not the passphrase form) both while a manual unlock is
+    // in flight (busy) and while the mount-time auto-unlock from cache runs (isRestoring).
+    const showSpinner = busy || isRestoring;
 
     const hasJwt = localStorage.getItem(LS_JWT) != null;
 
@@ -380,9 +460,11 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
     return (
         <div className="lock-overlay">
             <div className="lock-card">
-                <div className="lock-badge">{busy ? <KeyRound size={28} /> : <Lock size={28} />}</div>
-                <h2>{busy ? '正在解锁密钥…' : '保险库已锁定'}</h2>
-                <div className="who">输入 passphrase 在本地解密你的私钥</div>
+                <div className="lock-badge">{showSpinner ? <KeyRound size={28} /> : <Lock size={28} />}</div>
+                <h2>{isRestoring ? '正在恢复会话…' : busy ? '正在解锁密钥…' : '保险库已锁定'}</h2>
+                <div className="who">
+                    {isRestoring ? '用已缓存的口令在本地恢复你的会话' : '输入 passphrase 在本地解密你的私钥'}
+                </div>
 
                 <div className="lock-id">
                     <span className="av" style={{ background: account.color }}>
@@ -394,13 +476,14 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
                     </div>
                 </div>
 
-                {busy ? (
+                {showSpinner ? (
                     <div style={{ padding: '8px 0 4px' }}>
                         <div className="decrypt-bar" style={{ height: 4 }}>
                             <i style={{ width: '100%', animation: 'decrypt 1s ease forwards' }} />
                         </div>
                         <div className="lock-foot" style={{ marginTop: 14 }}>
-                            <span className="spin-ring" /> 用 passphrase 解密本地私钥…
+                            <span className="spin-ring" />{' '}
+                            {isRestoring ? '正在用已缓存的口令恢复会话…' : '用 passphrase 解密本地私钥…'}
                         </div>
                     </div>
                 ) : (

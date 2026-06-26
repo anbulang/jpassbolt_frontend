@@ -23,6 +23,7 @@ import { logout } from '../auth';
 import { getMe } from '../services/profile';
 import { useKey } from '../crypto/KeyContext';
 import { useTheme } from '../theme';
+import { touchPassphraseCache } from '../crypto/passphraseCache';
 
 interface NavItem {
     label: string;
@@ -149,6 +150,10 @@ function LockPill({ idleSecs, onLock }: { idleSecs: number; onLock: () => void }
             if (now - lastActivity.current > 800) {
                 lastActivity.current = now;
                 setRemain(idleSecs);
+                // Keep the survive-refresh passphrase cache expiry in lockstep with the
+                // in-page idle countdown, so an actively-used session also survives a
+                // refresh (no-op if nothing is cached). idleSecs > 0 here (early return above).
+                touchPassphraseCache(idleSecs);
             }
         };
         window.addEventListener('mousemove', reset);

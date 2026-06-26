@@ -8,6 +8,7 @@ import {
     LS_PRIVATE_KEY,
     LS_PUBLIC_KEY,
 } from './crypto/KeyContext';
+import { clearCachedPassphrase } from './crypto/passphraseCache';
 import type { User } from './types';
 
 /** Narrow an unknown thrown value into a best-effort axios-ish error shape for messaging. */
@@ -222,6 +223,9 @@ export async function loginWithGpg(
  * PrivateKey) entirely. KeyContext also exposes clear()/lock() for in-app use.
  */
 export function logout() {
+    // A deliberate logout forgets EVERYTHING, including the at-rest armored keys and
+    // the cached passphrase (unlike a 401 session-expiry, which keeps the keys).
+    clearCachedPassphrase();
     localStorage.removeItem(LS_JWT);
     localStorage.removeItem(LS_USER);
     localStorage.removeItem(LS_PRIVATE_KEY);

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { clearCachedPassphrase } from './crypto/passphraseCache';
 
 // Base API instance configured with the JPassbolt backend URL.
 // NOTE: 8080 is currently occupied by the unrelated "firewatch-platform-api"
@@ -34,12 +35,14 @@ api.interceptors.response.use(
 
         // Redirect to login if unauthorized and we're not already on the login page
         if (error.response?.status === 401 && window.location.pathname !== '/login') {
-            // Clear ALL credentials + key material so a session expiry never leaves the
-            // passphrase-protected private key orphaned at rest (parity with logout()).
+            // The JWT session is dead → clear the session token, the user blob, and the
+            // cached passphrase. But KEEP the passphrase-PROTECTED armored keys: an
+            // expired session is not a logout, so re-login only needs the passphrase
+            // (Login pre-fills the key from localStorage), never a re-paste of the key.
+            // A deliberate logout() still wipes the keys.
             localStorage.removeItem('jpassbolt_jwt');
             localStorage.removeItem('jpassbolt_user');
-            localStorage.removeItem('jpassbolt_private_key_armored');
-            localStorage.removeItem('jpassbolt_public_key_armored');
+            clearCachedPassphrase();
             window.location.href = '/login';
         }
 

@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loginWithGpg } from '../auth';
-import { useKey } from '../crypto/KeyContext';
+import { useKey, LS_PRIVATE_KEY } from '../crypto/KeyContext';
 import { probeMfaRequired } from '../services/mfa';
 import MfaChallenge from '../components/MfaChallenge';
 import { Vault, KeyRound, Lock, Eye, EyeOff, ShieldCheck, AlertTriangle, LogIn, Puzzle, X } from 'lucide-react';
 import KeyFileButton from '../components/KeyFileButton';
 
 export default function Login() {
-    const [pgpKey, setPgpKey] = useState('');
+    // Pre-fill the key from the at-rest armored key (kept across a 401 session-expiry,
+    // wiped on explicit logout). So re-login after expiry only needs the passphrase,
+    // not a re-paste of the private key. Empty on a fresh browser / after logout.
+    const [pgpKey, setPgpKey] = useState(() => localStorage.getItem(LS_PRIVATE_KEY) ?? '');
     const [passphrase, setPassphrase] = useState('');
     const [show, setShow] = useState(false);
     const [loading, setLoading] = useState(false);
