@@ -61,12 +61,14 @@ function readPrefs(): Prefs {
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<Prefs>;
     const merged = { ...DEFAULTS, ...parsed };
-    // One-time migration: the idle-lock window used to default to 300s (5 min) and
-    // the whole prefs object is persisted on every change, so existing browsers have
-    // 300 baked in. There has never been a UI to set idleSecs, so a stored 300 is
-    // always the stale old default — upgrade it to the new 30-min default. The
-    // ThemeProvider re-persists the merged value, so this self-heals after one load.
-    if (parsed.idleSecs === 300) {
+    // One-time migration for prefs blobs saved BEFORE the Settings UI existed:
+    // back then idleSecs had no UI and defaulted to 300s (5 min), which users read
+    // as "logged out" — bump those stale defaults to 30 min. We detect a pre-UI
+    // blob by the ABSENCE of `locale` (introduced together with the Appearance &
+    // Language settings UI). Once that UI exists, `locale` is always persisted, so
+    // a DELIBERATE 5-minute choice (300 is now a valid IDLE_OPTIONS value) is
+    // preserved and never silently clobbered. Self-heals after one re-persist.
+    if (parsed.locale === undefined && parsed.idleSecs === 300) {
       merged.idleSecs = DEFAULTS.idleSecs;
     }
     return merged;
@@ -102,7 +104,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // Keep the live i18next language in lockstep with the persisted preference,
     // so changing the language anywhere re-renders the whole tree in that locale.
     if (i18n.language !== prefs.locale) {
-      void i18n.changeLanguage(prefs.locale);
+      void i18n.changeLanguage(prefs.locale).catch((err) => {
+        console.error('[i18n] changeLanguage failed:', err);
+      });
     }
     try {
       localStorage.setItem(LS_PREFS, JSON.stringify(prefs));

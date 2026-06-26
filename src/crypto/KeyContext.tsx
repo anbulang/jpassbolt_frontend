@@ -494,9 +494,9 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
                     </div>
                 ) : (
                     <form onSubmit={handleSubmit}>
-                        <div className="pf-label">
+                        <label htmlFor="lockgate-passphrase" className="pf-label">
                             <KeyRound size={15} /> {t('lock.inputLabel')}
-                        </div>
+                        </label>
                         <div className={`pf-input${error ? ' err' : ''}`}>
                             <Lock size={17} />
                             <input

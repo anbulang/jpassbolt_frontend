@@ -70,7 +70,7 @@ import { useToast } from '../components/toastContext';
 import { useTheme } from '../theme';
 import { setUserLocale } from '../services/accountSettings';
 import { describeApiError } from '../i18n/errors';
-import type { AppLocale } from '../i18n';
+import i18n, { type AppLocale } from '../i18n';
 
 // ---------------------------------------------------------------------------
 // Error helpers
@@ -446,7 +446,9 @@ function AppearanceCard() {
     const onLocale = (value: AppLocale) => {
         setPref('locale', value);
         // Best-effort backend sync; a failed sync must never block the toggle.
-        setUserLocale(value).catch(() => {});
+        setUserLocale(value).catch((err) => {
+            if (import.meta.env.DEV) console.warn('[locale] backend sync failed:', err);
+        });
     };
 
     const idleLabel = (secs: number): string => {
@@ -655,13 +657,17 @@ function SecurityTab() {
         } catch (err: unknown) {
             if (httpStatus(err) === 429) setRateLimited(true);
             if (isTotpProviderDisabled(err)) {
-                setError(t('security.orgDisabled'));
+                // Read via the i18n singleton (current language at call time) so this
+                // callback does NOT depend on the hook's `t`. With `t` in the deps,
+                // switching language re-created probe → re-ran the effect → silently
+                // re-fetched MFA status and flashed the UI back to "loading".
+                setError(i18n.t('settings:security.orgDisabled'));
             } else {
                 setError(describeApiError(err));
             }
             setStatus('error');
         }
-    }, [t]);
+    }, []);
 
     useEffect(() => {
         void probe();
@@ -900,6 +906,7 @@ function SecurityTab() {
                                         <input
                                             id="totp-code"
                                             className="sinput"
+                                            aria-label={t('security.setup.codeStep')}
                                             inputMode="numeric"
                                             autoComplete="one-time-code"
                                             maxLength={6}
@@ -1160,7 +1167,7 @@ function ServerSettingsCard({ isAdmin }: { isAdmin: boolean }) {
                     if (!cancelled) {
                         setOrgMfaError(
                             httpStatus(err) === 403
-                                ? t('errors.orgMfaForbiddenView')
+                                ? i18n.t('settings:errors.orgMfaForbiddenView')
                                 : describeApiError(err),
                         );
                     }
@@ -1170,7 +1177,10 @@ function ServerSettingsCard({ isAdmin }: { isAdmin: boolean }) {
         return () => {
             cancelled = true;
         };
-    }, [isAdmin, t]);
+        // `t` intentionally omitted: this effect only LOADS data; the one error
+        // string it builds uses the i18n singleton above. Depending on `t` would
+        // re-fetch server settings + org MFA on every language switch.
+    }, [isAdmin]);
 
     const rows = useMemo(() => (settings ? flattenSettings(settings) : []), [settings]);
 
