@@ -1,0 +1,146 @@
+{
+  "search": {
+    "placeholder": "Search credentials, username, URL…",
+    "clear": "Clear"
+  },
+  "scope": {
+    "searchResults": "Search results",
+    "favorites": "Favorites",
+    "folder": "Folder",
+    "all": "All credentials"
+  },
+  "meta": {
+    "count": "<0>{{count}}</0> items · {{scope}}",
+    "decrypting": "Decrypting…"
+  },
+  "actions": {
+    "create": "New",
+    "createResource": "New credential",
+    "favorite": "Favorite",
+    "unfavorite": "Remove from favorites",
+    "edit": "Edit",
+    "moveTo": "Move to…",
+    "delete": "Delete",
+    "share": "Share",
+    "add": "Add",
+    "copy": "Copy",
+    "copyPassword": "Copy password",
+    "lockNow": "Lock now"
+  },
+  "list": {
+    "loadingVault": "Decrypting your vault…",
+    "loadFailed": "Failed to load",
+    "noMatch": "No matching credentials",
+    "emptyVault": "Your vault is empty",
+    "noResourcesYet": "No credentials here yet",
+    "noMatchHint": "No results found for “{{query}}”. Try another keyword.",
+    "emptyHint": "Click “New” in the top right to add your first credential — it is encrypted locally before it ever leaves your browser.",
+    "dragHint": "Drag onto a folder to move"
+  },
+  "panel": {
+    "selectPrompt": "Select a credential",
+    "selectHint": "Pick an item from the middle list to view it and decrypt its password locally on demand.",
+    "e2ee": "End-to-end encrypted",
+    "accessCount": "{{count}} viewers",
+    "tabDetail": "Credential",
+    "tabShared": "Shared",
+    "tabComment": "Comments",
+    "fieldUsername": "Username",
+    "fieldDescription": "Description",
+    "lastModified": "Last modified",
+    "createdAt": "Created",
+    "resourceId": "Resource ID",
+    "encryptedForCount": "This secret is individually encrypted for <1>{{count}}</1> recipients",
+    "loadingAccess": "Loading access list…",
+    "noOtherViewers": "No other viewers yet.",
+    "groupFallback": "Group",
+    "userFallback": "User",
+    "groupShare": "Group share",
+    "permLevel": "Level {{level}}",
+    "loadingComments": "Loading comments…",
+    "noComments": "No comments yet. Discussions are kept alongside the credential.",
+    "commentPlaceholder": "Write a comment…",
+    "sendComment": "Send",
+    "sendingComment": "Sending…"
+  },
+  "perm": {
+    "owner": "Owner",
+    "edit": "Can edit",
+    "read": "Read only"
+  },
+  "secret": {
+    "passwordLabel": "Password",
+    "decryptedLocal": "Decrypted (local)",
+    "encryptedStored": "Encrypted at rest",
+    "decrypting": "Decrypting…",
+    "decryptingShort": "Decrypting",
+    "reveal": "Show",
+    "relockNote": "Auto re-locks in {{seconds}}s ·",
+    "strength": "Strength",
+    "strengthStrong": "Very strong",
+    "strengthGood": "Good",
+    "strengthWeak": "Weak",
+    "v5MetadataEncrypted": "v5 metadata encrypted",
+    "e2ee": "End-to-end encrypted",
+    "copiedBurn": "Password copied · clipboard clears in {{seconds}}s",
+    "clipboardError": "Cannot access the clipboard.",
+    "decryptFailed": "Decryption failed."
+  },
+  "expiry": {
+    "expired": "Expired",
+    "today": "Expires today",
+    "inDays": "Expires in {{days}} days"
+  },
+  "copy": {
+    "copied": "{{label}} copied"
+  },
+  "move": {
+    "title": "Move “{{name}}”",
+    "titleFallback": "Move credential",
+    "moving": "Moving…",
+    "move": "Move",
+    "targetFolder": "Target folder",
+    "noFolder": "No folder (root)"
+  },
+  "delete": {
+    "title": "Delete credential",
+    "message": "Delete <1>{{name}}</1>? This removes it for everyone it is shared with. You must be the owner of this credential."
+  },
+  "form": {
+    "titleEdit": "Edit credential",
+    "titleCreate": "New credential",
+    "saveChanges": "Save changes",
+    "create": "Create",
+    "decryptingCurrent": "Decrypting the current secret…",
+    "nameLabel": "Name *",
+    "namePlaceholder": "e.g. GitHub",
+    "usernameLabel": "Username",
+    "usernamePlaceholder": "you@example.com",
+    "uriLabel": "URL",
+    "uriPlaceholder": "https://example.com",
+    "passwordLabel": "Password *",
+    "descriptionLabel": "Description",
+    "descriptionEncryptedPlaceholder": "Encrypted together with the secret",
+    "descriptionCleartextPlaceholder": "Optional note (stored unencrypted)",
+    "typeLabel": "Type",
+    "folderLabel": "Folder",
+    "noFolder": "No folder (root)"
+  },
+  "toast": {
+    "favRemoved": "Removed from favorites",
+    "favAdded": "Added to favorites",
+    "favUpdateFailed": "Failed to update favorite.",
+    "deleted": "Credential deleted",
+    "deleteFailed": "Failed to delete credential.",
+    "moved": "Credential moved",
+    "moveFailed": "Failed to move credential.",
+    "updated": "Credential updated",
+    "created": "Credential created",
+    "saveFailed": "Failed to save credential."
+  },
+  "error": {
+    "loadKeyForEdit": "Could not load the current secret for editing.",
+    "publicKeyUnavailable": "Your public key is unavailable. Unlock the vault and try again.",
+    "resourceTypeUnavailable": "The selected resource type is unavailable. Refresh and try again."
+  }
+}

@@ -35,8 +35,16 @@ import {
 } from 'react';
 import * as openpgp from 'openpgp';
 import type { PrivateKey } from 'openpgp';
+import { useTranslation } from 'react-i18next';
 import { Lock, KeyRound, Eye, EyeOff, ShieldCheck, Unlock, AlertTriangle } from 'lucide-react';
+import i18n from '../i18n';
 import { encryptMessage } from '../gpg';
+import { readIdleSecs } from '../theme';
+import {
+    cachePassphrase,
+    clearCachedPassphrase,
+    readCachedPassphrase,
+} from './passphraseCache';
 
 // ---------------------------------------------------------------------------
 // localStorage key constants (single source of truth for the crypto layer)
@@ -52,6 +60,13 @@ export const LS_PUBLIC_KEY = 'jpassbolt_public_key_armored';
 export interface KeyContextValue {
     /** True when authenticated (JWT present) but no decrypted key is in memory (e.g. after hard refresh). */
     isLocked: boolean;
+    /**
+     * True only during the brief window on mount when we are auto-unlocking from a
+     * cached passphrase (survive-refresh). LockGate shows a neutral "restoring
+     * session" spinner instead of the passphrase form while this is true, so a
+     * refresh that will auto-unlock never flashes the unlock prompt.
+     */
+    isRestoring: boolean;
     /** Own armored public key from localStorage (jpassbolt_public_key_armored), or null if absent. */
     ownPublicKeyArmored: string | null;
     /** Fingerprint of the unlocked key (lowercase hex), or null while locked. */
@@ -93,12 +108,32 @@ function errMessage(err: unknown, fallback: string): string {
     return fallback;
 }
 
+/** Localized crypto-layer message helper (uses the i18n singleton, like i18n/errors.ts). */
+function tc(key: string, opts?: Record<string, unknown>): string {
+    return i18n.t(`crypto:${key}`, opts ?? {});
+}
+
 function readStoredPrivateKey(): string | null {
     return localStorage.getItem(LS_PRIVATE_KEY);
 }
 
 function readStoredPublicKey(): string | null {
     return localStorage.getItem(LS_PUBLIC_KEY);
+}
+
+/**
+ * Synchronous, side-effect-light check for whether a page refresh can auto-unlock
+ * the vault from the cached passphrase: we need to be authenticated (JWT present),
+ * have a passphrase-protected armored key to decrypt, and hold a non-expired
+ * cached passphrase. Used to initialize isRestoring so LockGate shows a spinner
+ * (not the passphrase form) while the async unlock runs.
+ */
+function canAutoUnlock(): boolean {
+    return (
+        localStorage.getItem(LS_JWT) != null &&
+        readStoredPrivateKey() != null &&
+        readCachedPassphrase() != null
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +151,10 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
     // `isLocked` flips to false only after a successful unlock; it is the single source of
     // truth the UI watches. We derive the initial value: locked if no key is in memory yet.
     const [isLocked, setIsLocked] = useState<boolean>(true);
+    // True while the mount-time auto-unlock from the cached passphrase is in flight.
+    // Initialized synchronously so the very first render already knows a refresh will
+    // auto-unlock (LockGate then shows a spinner, never the passphrase form).
+    const [isRestoring, setIsRestoring] = useState<boolean>(() => canAutoUnlock());
     // Bump to force a re-read of hasStoredKey after setArmoredKeys/clear.
     const [storedKeyVersion, setStoredKeyVersion] = useState(0);
 
@@ -139,12 +178,16 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
     );
 
     const lock = useCallback(() => {
+        // Locking the vault must also forget the cached passphrase, otherwise a
+        // refresh right after an idle/manual lock would silently auto-unlock again.
+        clearCachedPassphrase();
         privateKeyRef.current = null;
         setOwnFingerprint(null);
         setIsLocked(true);
     }, []);
 
     const clear = useCallback(() => {
+        clearCachedPassphrase();
         privateKeyRef.current = null;
         localStorage.removeItem(LS_PRIVATE_KEY);
         localStorage.removeItem(LS_PUBLIC_KEY);
@@ -157,7 +200,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
     const unlock = useCallback(async (passphrase: string) => {
         const armoredPrivateKey = readStoredPrivateKey();
         if (!armoredPrivateKey) {
-            throw new Error('No stored private key to unlock. Please log in again.');
+            throw new Error(tc('errors.noStoredKey'));
         }
 
         // Read + decrypt the private key into memory.
@@ -165,7 +208,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
         try {
             encryptedKey = await openpgp.readPrivateKey({ armoredKey: armoredPrivateKey });
         } catch (err: unknown) {
-            throw new Error(errMessage(err, 'Failed to read stored private key.'));
+            throw new Error(errMessage(err, tc('errors.readStoredKey')));
         }
 
         let decryptedKey: PrivateKey;
@@ -174,9 +217,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
             // ANYONE with access to this browser profile "unlock" with any passphrase
             // after a refresh — defeating the whole in-memory-passphrase model. Login
             // refuses such keys up front; refuse here too as a defence-in-depth guard.
-            throw new Error(
-                'Your stored key is not passphrase-protected. For your security, please log in again with a passphrase-protected key.',
-            );
+            throw new Error(tc('errors.keyNotProtected'));
         } else {
             try {
                 decryptedKey = await openpgp.decryptKey({
@@ -184,7 +225,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
                     passphrase,
                 });
             } catch {
-                throw new Error('Incorrect passphrase. Could not unlock your key.');
+                throw new Error(tc('errors.incorrectPassphrase'));
             }
         }
 
@@ -208,12 +249,52 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
         }
 
         setIsLocked(false);
+
+        // Cache the passphrase so a page refresh can re-unlock without re-typing,
+        // for as long as the idle-lock window (idleSecs). idleSecs === 0 ("never
+        // auto-lock") caches with no expiry (cleared on tab close / lock / logout).
+        const ttl = readIdleSecs();
+        cachePassphrase(passphrase, ttl > 0 ? ttl : null);
     }, []);
+
+    // On mount, if a non-expired cached passphrase exists (survive-refresh), unlock
+    // automatically from it. Runs exactly once; guarded so React StrictMode's double
+    // invoke in dev does not fire two concurrent unlocks. On failure the cache is
+    // dropped and LockGate falls back to the passphrase form.
+    const didBootstrap = useRef(false);
+    useEffect(() => {
+        if (didBootstrap.current) return;
+        didBootstrap.current = true;
+        if (!canAutoUnlock()) {
+            setIsRestoring(false);
+            return;
+        }
+        const cached = readCachedPassphrase();
+        if (!cached) {
+            setIsRestoring(false);
+            return;
+        }
+        // No cancellation guard: didBootstrap already guarantees a single run, and
+        // KeyProvider is the root provider that never unmounts mid-session. A guard
+        // here would let StrictMode's throwaway-mount cleanup suppress the only real
+        // completion and hang the spinner forever on the failure path. So ALWAYS
+        // clear isRestoring in finally — on success LockGate passes through (isLocked
+        // is false); on failure the cache is dropped and the passphrase form shows.
+        void (async () => {
+            try {
+                await unlock(cached);
+            } catch {
+                clearCachedPassphrase();
+            } finally {
+                setIsRestoring(false);
+            }
+        })();
+    }, [unlock]);
 
     const decrypt = useCallback(async (armoredMessage: string): Promise<string> => {
         const privateKey = privateKeyRef.current;
         if (!privateKey) {
-            throw new Error('Vault is locked. Unlock with your passphrase to decrypt.');
+            throw new Error(tc('errors.vaultLocked'));
         }
 
         const message = await openpgp.readMessage({ armoredMessage });
@@ -224,7 +305,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
             });
             return data as string;
         } catch (err: unknown) {
-            throw new Error(errMessage(err, 'Failed to decrypt message.'));
+            throw new Error(errMessage(err, tc('errors.decryptMessage')));
         }
     }, []);
 
@@ -232,7 +313,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
         async (plaintext: string, armoredPublicKeys: string[]): Promise<string> => {
             if (!armoredPublicKeys || armoredPublicKeys.length === 0) {
                 // Guard against silent lockout: refuse to encrypt with no recipient key.
-                throw new Error('No recipient public key provided for encryption.');
+                throw new Error(tc('errors.noRecipientKey'));
             }
             // Delegate to the shared gpg.ts helper (reads keys + encrypts).
             return encryptMessage(plaintext, armoredPublicKeys);
@@ -244,9 +325,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
         async (plaintext: string): Promise<string> => {
             const pub = ownPublicKeyArmored ?? readStoredPublicKey();
             if (!pub) {
-                throw new Error(
-                    'Your own public key is unavailable. Unlock your vault before creating a secret.',
-                );
+                throw new Error(tc('errors.ownPublicKeyUnavailable'));
             }
             return encryptMessage(plaintext, [pub]);
         },
@@ -256,6 +335,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
     const value = useMemo<KeyContextValue>(
         () => ({
             isLocked,
+            isRestoring,
             ownPublicKeyArmored,
             ownFingerprint,
             hasStoredKey,
@@ -269,6 +349,7 @@ export function KeyProvider({ children }: { children: ReactNode }): JSX.Element 
         }),
         [
             isLocked,
+            isRestoring,
             ownPublicKeyArmored,
             ownFingerprint,
             hasStoredKey,
@@ -307,11 +388,16 @@ export function useKey(): KeyContextValue {
  * If already unlocked (or not authenticated), it simply renders children.
  */
 export function LockGate({ children }: { children: ReactNode }): JSX.Element | null {
-    const { isLocked, hasStoredKey, unlock } = useKey();
+    const { t } = useTranslation('crypto');
+    const { isLocked, isRestoring, hasStoredKey, unlock } = useKey();
     const [passphrase, setPassphrase] = useState('');
     const [show, setShow] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+
+    // Show the spinner card (not the passphrase form) both while a manual unlock is
+    // in flight (busy) and while the mount-time auto-unlock from cache runs (isRestoring).
+    const showSpinner = busy || isRestoring;
 
     const hasJwt = localStorage.getItem(LS_JWT) != null;
 
@@ -349,7 +435,7 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
                 : null;
             const f = u?.profile?.first_name?.trim() ?? '';
             const l = u?.profile?.last_name?.trim() ?? '';
-            const name = [f, l].filter(Boolean).join(' ') || u?.username || '账户';
+            const name = [f, l].filter(Boolean).join(' ') || u?.username || t('lock.accountFallback');
             const username = u?.username ?? '';
             let initials = `${f.charAt(0)}${l.charAt(0)}`.toUpperCase();
             if (!initials.trim()) initials = (username || 'U').slice(0, 2).toUpperCase();
@@ -358,7 +444,7 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
             for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
             return { name, username, initials, color: `oklch(0.55 0.15 ${h % 360})` };
         } catch {
-            return { name: '账户', username: '', initials: 'U', color: 'var(--accent)' };
+            return { name: t('lock.accountFallback'), username: '', initials: 'U', color: 'var(--accent)' };
         }
     })();
 
@@ -371,7 +457,7 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
             await unlock(passphrase);
             setPassphrase('');
         } catch (err: unknown) {
-            setError(errMessage(err, 'passphrase 不正确，无法解锁。'));
+            setError(errMessage(err, t('errors.incorrectPassphrase')));
         } finally {
             setBusy(false);
         }
@@ -380,9 +466,11 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
     return (
         <div className="lock-overlay">
             <div className="lock-card">
-                <div className="lock-badge">{busy ? <KeyRound size={28} /> : <Lock size={28} />}</div>
-                <h2>{busy ? '正在解锁密钥…' : '保险库已锁定'}</h2>
-                <div className="who">输入 passphrase 在本地解密你的私钥</div>
+                <div className="lock-badge">{showSpinner ? <KeyRound size={28} /> : <Lock size={28} />}</div>
+                <h2>{isRestoring ? t('lock.titleRestoring') : busy ? t('lock.titleUnlocking') : t('lock.titleLocked')}</h2>
+                <div className="who">
+                    {isRestoring ? t('lock.subtitleRestoring') : t('lock.subtitleLocked')}
+                </div>
 
                 <div className="lock-id">
                     <span className="av" style={{ background: account.color }}>
@@ -394,20 +482,21 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
                     </div>
                 </div>
 
-                {busy ? (
+                {showSpinner ? (
                     <div style={{ padding: '8px 0 4px' }}>
                         <div className="decrypt-bar" style={{ height: 4 }}>
                             <i style={{ width: '100%', animation: 'decrypt 1s ease forwards' }} />
                         </div>
                         <div className="lock-foot" style={{ marginTop: 14 }}>
-                            <span className="spin-ring" /> 用 passphrase 解密本地私钥…
+                            <span className="spin-ring" />{' '}
+                            {isRestoring ? t('lock.spinnerRestoring') : t('lock.spinnerUnlocking')}
                         </div>
                     </div>
                 ) : (
                     <form onSubmit={handleSubmit}>
-                        <div className="pf-label">
-                            <KeyRound size={15} /> 输入 passphrase 解锁
-                        </div>
+                        <label htmlFor="lockgate-passphrase" className="pf-label">
+                            <KeyRound size={15} /> {t('lock.inputLabel')}
+                        </label>
                         <div className={`pf-input${error ? ' err' : ''}`}>
                             <Lock size={17} />
                             <input
@@ -437,10 +526,10 @@ export function LockGate({ children }: { children: ReactNode }): JSX.Element | n
                             style={{ width: '100%', height: 44, marginTop: 16, fontSize: 14 }}
                             disabled={passphrase.length === 0}
                         >
-                            <Unlock size={16} /> 解锁
+                            <Unlock size={16} /> {t('lock.submit')}
                         </button>
                         <div className="lock-foot">
-                            <ShieldCheck size={13} /> passphrase 仅用于本地解密，永不上传
+                            <ShieldCheck size={13} /> {t('lock.note')}
                         </div>
                     </form>
                 )}

@@ -1,0 +1,15 @@
+{
+  "lock": {
+    "now": "Lock now"
+  },
+  "auth": {
+    "invalidKey": "Invalid GPG private key.",
+    "keyNotProtected": "This private key is not protected by a passphrase. For your security, JPassbolt requires a passphrase-protected key. Add a passphrase to your key and try again.",
+    "userNotFound": "User not found for the provided GPG key.",
+    "stage1Failed": "GPG Auth Stage 1 failed: {{detail}}",
+    "stage2Failed": "GPG Auth Stage 2 failed: {{detail}}",
+    "missingChallengeToken": "The server did not return a challenge token (X-GPGAuth-User-Auth-Token header missing).",
+    "decryptChallengeFailed": "Failed to decrypt the server challenge. Is your passphrase correct?",
+    "missingJwt": "Authentication completed but no JWT token was returned in the headers."
+  }
+}

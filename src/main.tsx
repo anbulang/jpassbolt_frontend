@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import './index.css';
 import './styles/aegis.css';
+// Initialize i18next (Chinese default) before the first render so the very first
+// paint is already localized. Side-effect import — must run before <App/>.
+import './i18n';
 import App from './App.tsx';
 import { ThemeProvider } from './theme';
 import { KeyProvider } from './crypto/KeyContext';

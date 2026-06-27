@@ -1,0 +1,213 @@
+{
+  "users": {
+    "status": {
+      "disabled": "已禁用",
+      "active": "活跃",
+      "pending": "待激活"
+    },
+    "role": {
+      "admin": "管理员",
+      "member": "成员"
+    },
+    "head": {
+      "title": "用户",
+      "subtitleAdmin": "{{count}} 名成员 · 管理你组织中的成员",
+      "subtitleMember": "{{count}} 名成员 · 你组织中的成员"
+    },
+    "invite": "邀请用户",
+    "toolbar": {
+      "searchPlaceholder": "按姓名、用户名或邮箱搜索…",
+      "searchAria": "搜索用户",
+      "activeOnly": "仅活跃用户"
+    },
+    "segment": {
+      "all": "全部 {{count}}",
+      "admin": "管理员 {{count}}",
+      "pending": "待激活 {{count}}",
+      "disabled": "已禁用 {{count}}"
+    },
+    "loading": "加载用户…",
+    "empty": {
+      "title": "未找到用户",
+      "descSearch": "没有匹配你搜索条件的用户。换个姓名或邮箱试试。",
+      "descAdmin": "邀请你的第一位同事开始使用吧。",
+      "descMember": "你的组织中暂时还没有其他用户。"
+    },
+    "table": {
+      "user": "用户",
+      "role": "角色",
+      "groups": "群组",
+      "status": "状态"
+    },
+    "you": "你",
+    "lastLogin": "· {{date}}",
+    "actions": {
+      "editTitle": "编辑资料",
+      "editAria": "编辑 {{name}}",
+      "deleteSelfTitle": "无法删除自己的账户",
+      "deleteTitle": "删除用户",
+      "deleteAria": "删除 {{name}}"
+    },
+    "inviteModal": {
+      "title": "邀请用户",
+      "sending": "发送中…",
+      "send": "发送邀请",
+      "hint": "受邀用户将收到一封设置链接，并需在自己的设备上完成账户创建（生成 GPG 密钥对）后才能登录，私钥永不经过服务器。",
+      "usernameLabel": "用户名（邮箱）",
+      "firstNameLabel": "名字",
+      "lastNameLabel": "姓氏",
+      "roleLabel": "角色",
+      "roleLoading": "加载角色中…"
+    },
+    "editModal": {
+      "title": "编辑用户",
+      "usernameLabel": "用户名",
+      "firstNameLabel": "名字",
+      "lastNameLabel": "姓氏",
+      "roleLabel": "角色",
+      "currentRole": "当前角色",
+      "disableLabel": "禁用此账户",
+      "disableHint": "被禁用的用户保留其数据，但无法登录。"
+    },
+    "viewModal": {
+      "title": "用户资料",
+      "joined": "加入时间",
+      "lastLogin": "最近登录"
+    },
+    "deleteDialog": {
+      "title": "删除用户",
+      "ack": "知道了",
+      "checking": "正在检查该用户是否可以删除…",
+      "confirmPrefix": "确定要永久删除 ",
+      "confirmFallbackName": "该用户",
+      "confirmSuffix": " 吗？此操作不可撤销，其访问权限将立即被吊销。"
+    },
+    "toast": {
+      "inviteSent": "邀请已发送。对方需先通过邮件完成账户设置，才能登录。",
+      "updated": "用户已更新。",
+      "deleted": "已删除 {{name}}。"
+    },
+    "form": {
+      "usernameRequired": "请填写用户名（邮箱）。",
+      "roleRequired": "请选择一个角色。"
+    },
+    "error": {
+      "load": "加载用户目录失败。",
+      "inviteForbidden": "你没有邀请用户的权限。",
+      "inviteFailed": "邀请用户失败。",
+      "editForbidden": "你没有编辑该用户的权限。",
+      "updateFailed": "更新用户失败。",
+      "deleteForbidden": "你没有删除该用户的权限。",
+      "deleteBlocked": "该用户暂时无法删除——他们是某些共享密码的唯一所有者，或是某个群组的唯一管理员。请先转移所有权。",
+      "deleteFailed": "删除用户失败。他们可能是某些内容的唯一所有者，需先转移所有权。"
+    }
+  },
+  "groups": {
+    "unknownUser": "未知用户",
+    "loadingGroups": "正在加载群组…",
+    "emptyList": {
+      "title": "还没有任何群组",
+      "descAdmin": "创建一个群组，即可一次性把密码共享给一组用户。",
+      "descMember": "你还不是任何群组的成员。"
+    },
+    "newGroup": "新建群组",
+    "list": {
+      "heading": "群组 · {{count}}",
+      "new": "新建",
+      "memberCount": "{{count}} 名成员",
+      "members": "成员",
+      "managerTitle": "你是群管理员"
+    },
+    "selectPrompt": {
+      "title": "选择一个群组",
+      "desc": "在左侧挑选一个群组以查看其成员。"
+    },
+    "detail": {
+      "memberCount": "{{count}} 名成员",
+      "youAreManager": "你是群管理员",
+      "manageTitle": "添加或移除成员",
+      "members": "成员",
+      "renameTitle": "重命名群组",
+      "renameAria": "重命名群组",
+      "deleteTitle": "删除群组",
+      "deleteAria": "删除群组",
+      "loadingMembers": "正在加载成员…",
+      "emptyTitle": "暂无成员",
+      "emptyDescManage": "为该群组添加用户即可开始共享。",
+      "emptyDescMember": "该群组还没有任何成员。",
+      "membersHeading": "成员",
+      "managerBadge": "群管理员"
+    },
+    "createModal": {
+      "title": "新建群组",
+      "creating": "正在创建…",
+      "create": "创建群组",
+      "nameLabel": "群组名称",
+      "namePlaceholder": "例如：工程团队",
+      "hint": "你将作为该群组的首位管理员。可在群组详情中继续添加更多成员。"
+    },
+    "renameModal": {
+      "title": "重命名群组",
+      "saving": "正在保存…",
+      "nameLabel": "群组名称"
+    },
+    "manageModal": {
+      "title": "管理成员 · {{name}}",
+      "saving": "正在保存…",
+      "saveChanges": "保存更改",
+      "reencrypting": "正在为新成员重新加密群密文…",
+      "reencryptHint": "{{progress}} · 私钥永不离开各自设备",
+      "addMember": "添加成员",
+      "searchPlaceholder": "按姓名或用户名搜索用户",
+      "searching": "正在搜索…",
+      "added": "已添加",
+      "noKeyTitle": "该用户尚未完成账户设置",
+      "noKey": "无密钥",
+      "managerLabelTitle": "群管理员可编辑成员",
+      "manager": "管理员",
+      "removeTitle": "移除成员",
+      "removeAria": "移除 {{name}}",
+      "membersCount": "成员（{{count}}）",
+      "new": "新增",
+      "pendingRemovals": "保存后将移除 {{count}} 名成员。",
+      "footnote": "新成员会自动收到该群组可访问的每一份密文的重新加密副本。保存期间请保持密钥库解锁状态。"
+    },
+    "deleteDialog": {
+      "title": "删除「{{name}}」？",
+      "confirm": "删除群组",
+      "checking": "正在检查该群组能否安全删除…",
+      "blockedIntro": "无法删除该群组，因为它是以下密码的唯一所有者。请先转移所有权后再试：",
+      "warning": "删除该群组会对所有成员移除它，并撤销它所授予的共享密码访问权。此操作不可撤销。"
+    },
+    "toast": {
+      "created": "群组已创建。",
+      "renamed": "群组已重命名。",
+      "membersUpdated": "成员已更新。",
+      "deleted": "群组已删除。"
+    },
+    "form": {
+      "nameRequired": "请输入群组名称。"
+    },
+    "error": {
+      "loadGroups": "加载群组失败。",
+      "loadMembers": "加载群组成员失败。",
+      "forbidden": "你没有权限执行此操作。",
+      "createFailed": "创建群组失败。",
+      "renameFailed": "重命名群组失败。",
+      "searchUsers": "搜索用户失败。",
+      "vaultLocked": "你的密钥库已锁定。添加成员前请先用口令解锁——新成员需要为其重新加密密文。",
+      "cannotAddMembers": "无法添加 {{names}}：没有可用的公钥，因此无法为其加密密文。他们必须先完成账户设置。未做任何更改。",
+      "missingOperatorSecret": "服务器未提供你在资源 {{resourceId}} 上的密文，因此无法为新成员重新加密。未做任何更改。",
+      "recipientKeyMissing": "加密过程中某个接收者的密钥丢失。未做任何更改。",
+      "updateMembership": "更新成员失败。",
+      "deleteCheck": "暂时无法删除该群组。",
+      "deleteFailed": "删除群组失败。"
+    },
+    "progress": {
+      "checkingSecrets": "正在检查哪些密文需要重新加密…",
+      "resolvingKeys": "正在解析接收者密钥…",
+      "reencrypting": "正在为新成员重新加密 {{count}} 份密文…",
+      "savingMembership": "正在保存成员关系…"
+    }
+  }
+}

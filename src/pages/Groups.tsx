@@ -31,6 +31,7 @@
  * All decrypt/encrypt goes through useKey() — never gpg.ts directly.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   UsersRound,
   Plus,
@@ -51,6 +52,8 @@ import { Avatar } from '../components/Avatar';
 import { Badge } from '../components/Badge';
 import { useToast } from '../components/toastContext';
 import { useKey } from '../crypto/KeyContext';
+import { describeApiError } from '../i18n/errors';
+import i18n from '../i18n';
 
 import * as groupsService from '../services/groups';
 import { listUsers, getUser } from '../services/users';
@@ -78,24 +81,24 @@ function readCurrentUser(): User | null {
   }
 }
 
-/** Best-effort display name for a user (falls back to username). */
-function userName(u?: User | null): string {
-  if (!u) return 'Unknown user';
-  const full = [u.profile?.first_name, u.profile?.last_name].filter(Boolean).join(' ');
-  return full || u.username || 'Unknown user';
+/**
+ * Message for a caught error: a locally-thrown Error (e.g. the re-encryption
+ * guards) carries its own already-localized message, so surface it verbatim;
+ * anything from the network goes through describeApiError for the
+ * unreachable / session-expired / forbidden distinction.
+ */
+function describeError(err: unknown): string {
+  if (!axios.isAxiosError(err) && err instanceof Error && err.message) {
+    return err.message;
+  }
+  return describeApiError(err);
 }
 
-/** Extract a human message from any thrown error (Passbolt envelope or generic). */
-function errorMessage(err: unknown, fallback: string): string {
-  if (axios.isAxiosError(err)) {
-    const headerMsg = (err.response?.data as { header?: { message?: string } } | undefined)?.header
-      ?.message;
-    if (headerMsg) return headerMsg;
-    if (err.response?.status === 403) return 'You do not have permission to perform this action.';
-    if (err.message) return err.message;
-  }
-  if (err instanceof Error && err.message) return err.message;
-  return fallback;
+/** Best-effort display name for a user (falls back to username). */
+function userName(u?: User | null): string {
+  if (!u) return i18n.t('directory:groups.unknownUser');
+  const full = [u.profile?.first_name, u.profile?.last_name].filter(Boolean).join(' ');
+  return full || u.username || i18n.t('directory:groups.unknownUser');
 }
 
 function ErrorBanner({ message }: { message: string }) {
@@ -131,6 +134,7 @@ interface MemberDraft {
 // ===========================================================================
 
 export default function Groups() {
+  const { t } = useTranslation('directory');
   const toast = useToast();
   const { isLocked, decrypt, encryptFor } = useKey();
 
@@ -169,7 +173,7 @@ export default function Groups() {
         return list.length > 0 ? list[0].id : null;
       });
     } catch (err) {
-      setListError(errorMessage(err, 'Failed to load groups.'));
+      setListError(describeApiError(err));
       setGroups([]);
     } finally {
       setListLoading(false);
@@ -188,7 +192,7 @@ export default function Groups() {
       });
       setDetail(g);
     } catch (err) {
-      setDetailError(errorMessage(err, 'Failed to load group members.'));
+      setDetailError(describeApiError(err));
       setDetail(null);
     } finally {
       setDetailLoading(false);
@@ -241,21 +245,21 @@ export default function Groups() {
         )}
 
         {listLoading ? (
-          <FullSpinner label="正在加载群组…" />
+          <FullSpinner label={t('groups.loadingGroups')} />
         ) : groups.length === 0 && !listError ? (
           <div className="empty" style={{ flex: 1 }}>
             <div className="ico">
               <UsersRound />
             </div>
-            <h3>还没有任何群组</h3>
+            <h3>{t('groups.emptyList.title')}</h3>
             <p>
               {isAdmin
-                ? '创建一个群组，即可一次性把密码共享给一组用户。'
-                : '你还不是任何群组的成员。'}
+                ? t('groups.emptyList.descAdmin')
+                : t('groups.emptyList.descMember')}
             </p>
             {isAdmin && (
               <button className="btn primary" onClick={() => setCreateOpen(true)}>
-                <Plus /> 新建群组
+                <Plus /> {t('groups.newGroup')}
               </button>
             )}
           </div>
@@ -264,10 +268,10 @@ export default function Groups() {
             {/* Master list */}
             <div className="glist">
               <div className="glist-head">
-                <h3>群组 · {groups.length}</h3>
+                <h3>{t('groups.list.heading', { count: groups.length })}</h3>
                 {isAdmin && (
                   <button className="btn sm primary" onClick={() => setCreateOpen(true)}>
-                    <Plus /> 新建
+                    <Plus /> {t('groups.list.new')}
                   </button>
                 )}
               </div>
@@ -286,11 +290,13 @@ export default function Groups() {
                       <div className="gc-info">
                         <div className="gn">{g.name}</div>
                         <div className="gm">
-                          {count !== undefined ? `${count} 名成员` : '成员'}
+                          {count !== undefined
+                            ? t('groups.list.memberCount', { count })
+                            : t('groups.list.members')}
                         </div>
                       </div>
                       {manages && (
-                        <span className="admin-badge" title="你是群管理员">
+                        <span className="admin-badge" title={t('groups.list.managerTitle')}>
                           <ShieldCheck />
                         </span>
                       )}
@@ -318,8 +324,8 @@ export default function Groups() {
                   <div className="ico">
                     <UsersRound />
                   </div>
-                  <h3>选择一个群组</h3>
-                  <p>在左侧挑选一个群组以查看其成员。</p>
+                  <h3>{t('groups.selectPrompt.title')}</h3>
+                  <p>{t('groups.selectPrompt.desc')}</p>
                 </div>
               )}
             </div>
@@ -333,7 +339,7 @@ export default function Groups() {
           onClose={() => setCreateOpen(false)}
           onCreated={async (newId) => {
             setCreateOpen(false);
-            toast.success('群组已创建。');
+            toast.success(t('groups.toast.created'));
             await loadGroups();
             setSelectedId(newId);
           }}
@@ -348,7 +354,7 @@ export default function Groups() {
           onClose={() => setRenameOpen(false)}
           onRenamed={async () => {
             setRenameOpen(false);
-            toast.success('群组已重命名。');
+            toast.success(t('groups.toast.renamed'));
             await loadGroups();
             if (selectedId) await loadDetail(selectedId);
           }}
@@ -366,7 +372,7 @@ export default function Groups() {
           onClose={() => setManageOpen(false)}
           onSaved={async () => {
             setManageOpen(false);
-            toast.success('成员已更新。');
+            toast.success(t('groups.toast.membersUpdated'));
             await loadGroups();
             if (selectedId) await loadDetail(selectedId);
           }}
@@ -381,7 +387,7 @@ export default function Groups() {
           onClose={() => setDeleteOpen(false)}
           onDeleted={async () => {
             setDeleteOpen(false);
-            toast.success('群组已删除。');
+            toast.success(t('groups.toast.deleted'));
             setSelectedId(null);
             await loadGroups();
           }}
@@ -415,6 +421,7 @@ function GroupDetail({
   onRename: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation('directory');
   return (
     <>
       {/* Detail header */}
@@ -427,11 +434,11 @@ function GroupDetail({
           <p>&nbsp;</p>
           <div className="gd-meta">
             <span className="chip neutral">
-              <UsersRound /> {members.length} 名成员
+              <UsersRound /> {t('groups.detail.memberCount', { count: members.length })}
             </span>
             {canManage && (
               <span className="chip green">
-                <ShieldCheck /> 你是群管理员
+                <ShieldCheck /> {t('groups.detail.youAreManager')}
               </span>
             )}
           </div>
@@ -442,23 +449,23 @@ function GroupDetail({
             <button
               className="btn primary"
               onClick={onManage}
-              title="添加或移除成员"
+              title={t('groups.detail.manageTitle')}
             >
-              <UserPlus /> 成员
+              <UserPlus /> {t('groups.detail.members')}
             </button>
             <button
               className="iconbtn"
               onClick={onRename}
-              title="重命名群组"
-              aria-label="重命名群组"
+              title={t('groups.detail.renameTitle')}
+              aria-label={t('groups.detail.renameAria')}
             >
               <Pencil />
             </button>
             <button
               className="iconbtn"
               onClick={onDelete}
-              title="删除群组"
-              aria-label="删除群组"
+              title={t('groups.detail.deleteTitle')}
+              aria-label={t('groups.detail.deleteAria')}
               style={{ color: 'var(--red-text)' }}
             >
               <Trash2 />
@@ -475,19 +482,19 @@ function GroupDetail({
       )}
 
       {loading ? (
-        <FullSpinner label="正在加载成员…" />
+        <FullSpinner label={t('groups.detail.loadingMembers')} />
       ) : members.length === 0 && !error ? (
         <div className="empty" style={{ padding: '48px 20px' }}>
           <div className="ico">
             <UsersRound />
           </div>
-          <h3>暂无成员</h3>
-          <p>{canManage ? '为该群组添加用户即可开始共享。' : '该群组还没有任何成员。'}</p>
+          <h3>{t('groups.detail.emptyTitle')}</h3>
+          <p>{canManage ? t('groups.detail.emptyDescManage') : t('groups.detail.emptyDescMember')}</p>
         </div>
       ) : (
         <div className="gd-section">
           <h4>
-            成员 <span className="ct">{members.length}</span>
+            {t('groups.detail.membersHeading')} <span className="ct">{members.length}</span>
             <span className="h4-spacer" />
           </h4>
           {members.map((gu) => (
@@ -503,8 +510,8 @@ function GroupDetail({
                 <div className="mn">
                   {userName(gu.user)}
                   {gu.is_admin && (
-                    <span className="admin-badge" title="群管理员">
-                      <ShieldCheck /> 群管理员
+                    <span className="admin-badge" title={t('groups.detail.managerBadge')}>
+                      <ShieldCheck /> {t('groups.detail.managerBadge')}
                     </span>
                   )}
                 </div>
@@ -531,6 +538,7 @@ function CreateGroupModal({
   onCreated: (newId: string) => void;
   onError: (m: string) => void;
 }) {
+  const { t } = useTranslation('directory');
   const currentUser = useMemo(() => readCurrentUser(), []);
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -539,7 +547,7 @@ function CreateGroupModal({
   const submit = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      setError('Please enter a group name.');
+      setError(t('groups.form.nameRequired'));
       return;
     }
     setSaving(true);
@@ -554,7 +562,7 @@ function CreateGroupModal({
       });
       onCreated(created.id);
     } catch (err) {
-      const m = errorMessage(err, 'Failed to create group.');
+      const m = describeApiError(err);
       setError(m);
       onError(m);
     } finally {
@@ -565,16 +573,16 @@ function CreateGroupModal({
   return (
     <Modal
       open
-      title="新建群组"
+      title={t('groups.createModal.title')}
       onClose={onClose}
       maxWidth={440}
       footer={
         <>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>
-            取消
+            {t('common:actions.cancel')}
           </button>
           <button className="btn btn-primary" onClick={submit} disabled={saving}>
-            {saving ? '正在创建…' : '创建群组'}
+            {saving ? t('groups.createModal.creating') : t('groups.createModal.create')}
           </button>
         </>
       }
@@ -586,14 +594,14 @@ function CreateGroupModal({
       )}
       <div className="form-group" style={{ marginBottom: 0 }}>
         <label className="form-label" htmlFor="group-name">
-          群组名称
+          {t('groups.createModal.nameLabel')}
         </label>
         <input
           id="group-name"
           className="form-control"
           autoFocus
           value={name}
-          placeholder="例如：工程团队"
+          placeholder={t('groups.createModal.namePlaceholder')}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') void submit();
@@ -602,7 +610,7 @@ function CreateGroupModal({
         />
       </div>
       <p style={{ color: 'var(--text-3)', fontSize: '13px', marginTop: '12px' }}>
-        你将作为该群组的首位管理员。可在群组详情中继续添加更多成员。
+        {t('groups.createModal.hint')}
       </p>
     </Modal>
   );
@@ -623,6 +631,7 @@ function RenameGroupModal({
   onRenamed: () => void;
   onError: (m: string) => void;
 }) {
+  const { t } = useTranslation('directory');
   const [name, setName] = useState(group.name);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -630,7 +639,7 @@ function RenameGroupModal({
   const submit = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      setError('Please enter a group name.');
+      setError(t('groups.form.nameRequired'));
       return;
     }
     if (trimmed === group.name) {
@@ -643,7 +652,7 @@ function RenameGroupModal({
       await groupsService.updateGroup(group.id, { name: trimmed });
       onRenamed();
     } catch (err) {
-      const m = errorMessage(err, 'Failed to rename group.');
+      const m = describeApiError(err);
       setError(m);
       onError(m);
     } finally {
@@ -654,16 +663,16 @@ function RenameGroupModal({
   return (
     <Modal
       open
-      title="重命名群组"
+      title={t('groups.renameModal.title')}
       onClose={onClose}
       maxWidth={440}
       footer={
         <>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>
-            取消
+            {t('common:actions.cancel')}
           </button>
           <button className="btn btn-primary" onClick={submit} disabled={saving}>
-            {saving ? '正在保存…' : '保存'}
+            {saving ? t('groups.renameModal.saving') : t('common:actions.save')}
           </button>
         </>
       }
@@ -675,7 +684,7 @@ function RenameGroupModal({
       )}
       <div className="form-group" style={{ marginBottom: 0 }}>
         <label className="form-label" htmlFor="rename-group">
-          群组名称
+          {t('groups.renameModal.nameLabel')}
         </label>
         <input
           id="rename-group"
@@ -714,6 +723,7 @@ function ManageMembersModal({
   onSaved: () => void;
   onError: (m: string) => void;
 }) {
+  const { t } = useTranslation('directory');
   // Seed the draft from the group's current members.
   const [drafts, setDrafts] = useState<MemberDraft[]>(() =>
     (group.groups_users ?? []).map((gu) => ({
@@ -748,7 +758,7 @@ function ManageMembersModal({
         const users = await listUsers({ search: q });
         if (!cancelled) setResults(users);
       } catch (err) {
-        if (!cancelled) setError(errorMessage(err, 'Failed to search users.'));
+        if (!cancelled) setError(describeApiError(err));
       } finally {
         if (!cancelled) setSearching(false);
       }
@@ -872,12 +882,10 @@ function ManageMembersModal({
 
       if (addingMembers) {
         if (isLocked) {
-          throw new Error(
-            'Your vault is locked. Unlock with your passphrase before adding members — new members need their secrets re-encrypted.',
-          );
+          throw new Error(t('groups.error.vaultLocked'));
         }
 
-        setProgress('Checking which secrets need re-encryption...');
+        setProgress(t('groups.progress.checkingSecrets'));
         const dryRun = await groupsService.updateGroupDryRun(group.id, {
           groups_users: changes,
         });
@@ -901,7 +909,7 @@ function ManageMembersModal({
 
           // Validate up-front that every needed recipient has a resolvable key.
           const neededUserIds = Array.from(new Set(needed.map((n) => n.Secret.user_id)));
-          setProgress('Resolving recipient keys...');
+          setProgress(t('groups.progress.resolvingKeys'));
           for (const uid of neededUserIds) {
             const key = await resolvePublicKey(uid);
             keyByUser.set(uid, key);
@@ -914,12 +922,10 @@ function ManageMembersModal({
                 return d ? userName(d.user) : uid;
               })
               .join(', ');
-            throw new Error(
-              `Cannot add ${names}: no public key is available, so their secrets cannot be encrypted. They must finish account setup first. No changes were made.`,
-            );
+            throw new Error(t('groups.error.cannotAddMembers', { names }));
           }
 
-          setProgress(`Re-encrypting ${needed.length} secret(s) for new members...`);
+          setProgress(t('groups.progress.reencrypting', { count: needed.length }));
           for (const item of needed) {
             const { resource_id, user_id } = item.Secret;
 
@@ -931,7 +937,7 @@ function ManageMembersModal({
                 // Backend said a secret is needed but didn't supply the source
                 // ciphertext to decrypt from. We cannot safely synthesize it.
                 throw new Error(
-                  `The server did not provide your own secret for resource ${resource_id}, so it cannot be re-encrypted for the new member. No changes were made.`,
+                  t('groups.error.missingOperatorSecret', { resourceId: resource_id }),
                 );
               }
               plaintext = await decrypt(cipher);
@@ -941,9 +947,7 @@ function ManageMembersModal({
             const recipientKey = keyByUser.get(user_id);
             if (!recipientKey) {
               // Already validated above; defensive guard.
-              throw new Error(
-                'A recipient key went missing during encryption. No changes were made.',
-              );
+              throw new Error(t('groups.error.recipientKeyMissing'));
             }
 
             const encrypted = await encryptFor(plaintext, [recipientKey]);
@@ -953,14 +957,14 @@ function ManageMembersModal({
       }
 
       // ---- Step 2: commit the membership change + any re-encrypted secrets.
-      setProgress('Saving membership...');
+      setProgress(t('groups.progress.savingMembership'));
       const payload: GroupUpdateRequest = { groups_users: changes };
       if (secrets.length > 0) payload.secrets = secrets;
       await groupsService.updateGroup(group.id, payload);
 
       onSaved();
     } catch (err) {
-      const m = errorMessage(err, 'Failed to update membership.');
+      const m = describeError(err);
       setError(m);
       onError(m);
     } finally {
@@ -975,17 +979,17 @@ function ManageMembersModal({
   return (
     <Modal
       open
-      title={`管理成员 · ${group.name}`}
+      title={t('groups.manageModal.title', { name: group.name })}
       onClose={saving ? () => undefined : onClose}
       maxWidth={560}
       closeOnBackdrop={!saving}
       footer={
         <>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>
-            取消
+            {t('common:actions.cancel')}
           </button>
           <button className="btn btn-primary" onClick={save} disabled={saving}>
-            {saving ? '正在保存…' : '保存更改'}
+            {saving ? t('groups.manageModal.saving') : t('groups.manageModal.saveChanges')}
           </button>
         </>
       }
@@ -1000,8 +1004,8 @@ function ManageMembersModal({
         <div className="reencrypt-banner" style={{ margin: '0 0 16px' }}>
           <Spinner size={16} />
           <div className="rb-text">
-            <b>正在为新成员重新加密群密文…</b>
-            <div className="s">{progress} · 私钥永不离开各自设备</div>
+            <b>{t('groups.manageModal.reencrypting')}</b>
+            <div className="s">{t('groups.manageModal.reencryptHint', { progress })}</div>
           </div>
         </div>
       )}
@@ -1009,13 +1013,13 @@ function ManageMembersModal({
       {/* Add-member search */}
       <div className="form-group">
         <label className="form-label" htmlFor="member-search">
-          添加成员
+          {t('groups.manageModal.addMember')}
         </label>
         <div className="searchbox">
           <Search />
           <input
             id="member-search"
-            placeholder="按姓名或用户名搜索用户"
+            placeholder={t('groups.manageModal.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             disabled={saving}
@@ -1036,7 +1040,7 @@ function ManageMembersModal({
                   fontSize: '13px',
                 }}
               >
-                <Spinner size={14} /> 正在搜索…
+                <Spinner size={14} /> {t('groups.manageModal.searching')}
               </div>
             ) : (
               results.map((u) => {
@@ -1065,10 +1069,10 @@ function ManageMembersModal({
                       <div className="ae">{u.username}</div>
                     </div>
                     {already ? (
-                      <Badge variant="muted">已添加</Badge>
+                      <Badge variant="muted">{t('groups.manageModal.added')}</Badge>
                     ) : !hasKey && !u.active ? (
-                      <Badge variant="danger" title="该用户尚未完成账户设置">
-                        无密钥
+                      <Badge variant="danger" title={t('groups.manageModal.noKeyTitle')}>
+                        {t('groups.manageModal.noKey')}
                       </Badge>
                     ) : (
                       <span className="add" style={{ color: 'var(--accent-text)', display: 'inline-flex' }}>
@@ -1093,7 +1097,7 @@ function ManageMembersModal({
             marginBottom: '8px',
           }}
         >
-          成员（{visibleDrafts.length}）
+          {t('groups.manageModal.membersCount', { count: visibleDrafts.length })}
         </div>
         <div>
           {visibleDrafts.map((d) => (
@@ -1110,7 +1114,7 @@ function ManageMembersModal({
                   {userName(d.user)}
                   {d.isNew && (
                     <span style={{ marginLeft: '4px' }}>
-                      <Badge variant="success">新增</Badge>
+                      <Badge variant="success">{t('groups.manageModal.new')}</Badge>
                     </span>
                   )}
                 </div>
@@ -1128,7 +1132,7 @@ function ManageMembersModal({
                     cursor: saving ? 'default' : 'pointer',
                     userSelect: 'none',
                   }}
-                  title="群管理员可编辑成员"
+                  title={t('groups.manageModal.managerLabelTitle')}
                 >
                   <input
                     type="checkbox"
@@ -1136,15 +1140,15 @@ function ManageMembersModal({
                     onChange={() => toggleManager(d.user.id)}
                     disabled={saving}
                   />
-                  管理员
+                  {t('groups.manageModal.manager')}
                 </label>
 
                 <button
                   className="rowmenu"
                   onClick={() => removeMember(d.user.id)}
                   disabled={saving}
-                  title="移除成员"
-                  aria-label={`移除 ${userName(d.user)}`}
+                  title={t('groups.manageModal.removeTitle')}
+                  aria-label={t('groups.manageModal.removeAria', { name: userName(d.user) })}
                   style={{ color: 'var(--text-3)' }}
                 >
                   <XIcon size={16} />
@@ -1156,13 +1160,13 @@ function ManageMembersModal({
 
         {pendingRemovals.length > 0 && (
           <div style={{ marginTop: '12px', fontSize: '13px', color: 'var(--text-3)' }}>
-            保存后将移除 {pendingRemovals.length} 名成员。
+            {t('groups.manageModal.pendingRemovals', { count: pendingRemovals.length })}
           </div>
         )}
       </div>
 
       <p style={{ color: 'var(--text-3)', fontSize: '12px', marginTop: '16px' }}>
-        新成员会自动收到该群组可访问的每一份密文的重新加密副本。保存期间请保持密钥库解锁状态。
+        {t('groups.manageModal.footnote')}
       </p>
     </Modal>
   );
@@ -1183,6 +1187,7 @@ function DeleteGroupDialog({
   onDeleted: () => void;
   onError: (m: string) => void;
 }) {
+  const { t } = useTranslation('directory');
   const [checking, setChecking] = useState(true);
   const [blocking, setBlocking] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1216,7 +1221,7 @@ function DeleteGroupDialog({
         if (names && names.length > 0) {
           setBlocking(names);
         } else {
-          setError(errorMessage(err, 'Cannot delete this group right now.'));
+          setError(describeApiError(err));
         }
       } finally {
         if (!cancelled) setChecking(false);
@@ -1234,7 +1239,7 @@ function DeleteGroupDialog({
       await groupsService.deleteGroup(group.id);
       onDeleted();
     } catch (err) {
-      const m = errorMessage(err, 'Failed to delete group.');
+      const m = describeApiError(err);
       setError(m);
       onError(m);
     } finally {
@@ -1249,8 +1254,8 @@ function DeleteGroupDialog({
     <ConfirmDialog
       open
       danger
-      title={`删除「${group.name}」？`}
-      confirmLabel="删除群组"
+      title={t('groups.deleteDialog.title', { name: group.name })}
+      confirmLabel={t('groups.deleteDialog.confirm')}
       loading={deleting}
       onCancel={onClose}
       // When blocked or still checking, the confirm button is a no-op guard.
@@ -1258,12 +1263,12 @@ function DeleteGroupDialog({
       message={
         checking ? (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-            <Spinner size={16} /> 正在检查该群组能否安全删除…
+            <Spinner size={16} /> {t('groups.deleteDialog.checking')}
           </span>
         ) : isBlocked ? (
           <div>
             <p style={{ marginTop: 0 }}>
-              无法删除该群组，因为它是以下密码的唯一所有者。请先转移所有权后再试：
+              {t('groups.deleteDialog.blockedIntro')}
             </p>
             <ul
               style={{
@@ -1283,14 +1288,14 @@ function DeleteGroupDialog({
           <ErrorBanner message={error} />
         ) : (
           <span>
-            删除该群组会对所有成员移除它，并撤销它所授予的共享密码访问权。此操作不可撤销。
+            {t('groups.deleteDialog.warning')}
           </span>
         )
       }
       extra={
         isBlocked ? (
           <button className="btn btn-secondary" style={{ width: '100%' }} onClick={onClose}>
-            关闭
+            {t('common:actions.close')}
           </button>
         ) : undefined
       }

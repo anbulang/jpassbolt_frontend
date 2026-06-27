@@ -11,8 +11,10 @@
 // the server-side MFA gate for the already-issued JWT session.
 
 import { useRef, useState, type JSX } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Shield, ShieldCheck, KeyRound, AlertTriangle } from 'lucide-react';
 import { verifyMfaLogin } from '../services/mfa';
+import { describeApiError } from '../i18n/errors';
 
 interface Props {
   /** Called once the TOTP code is accepted by the backend. The caller enters the vault. */
@@ -23,21 +25,13 @@ interface Props {
 
 type Stage = 'mfa' | 'verifying';
 
-/** Best-effort error message extraction (axios envelope -> Error -> string). */
-function errMessage(err: unknown, fallback: string): string {
-  const e = err as {
-    response?: { status?: number; data?: { header?: { message?: string } } };
-    message?: string;
-  };
-  return e?.response?.data?.header?.message || e?.message || fallback;
-}
-
 /** Pull the HTTP status off an axios-ish error, or undefined. */
 function statusOf(err: unknown): number | undefined {
   return (err as { response?: { status?: number } })?.response?.status;
 }
 
 export default function MfaChallenge({ onVerified, onCancel }: Props): JSX.Element {
+  const { t } = useTranslation('components');
   const [stage, setStage] = useState<Stage>('mfa');
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
@@ -63,11 +57,11 @@ export default function MfaChallenge({ onVerified, onCancel }: Props): JSX.Eleme
     } catch (err: unknown) {
       const st = statusOf(err);
       if (st === 429) {
-        setError('尝试过于频繁，请稍后再试');
+        setError(t('mfa.errors.tooManyAttempts'));
       } else if (st === 400 || st === 403) {
-        setError('验证码错误，请重试');
+        setError(t('mfa.errors.invalidCode'));
       } else {
-        setError(errMessage(err, '验证失败，请重试'));
+        setError(describeApiError(err));
       }
       // Reset for another attempt with the error shake.
       setStage('mfa');
@@ -91,9 +85,9 @@ export default function MfaChallenge({ onVerified, onCancel }: Props): JSX.Eleme
         >
           {verifying ? <ShieldCheck size={28} /> : <Shield size={28} />}
         </div>
-        <h2>{verifying ? '验证通过' : '两步验证'}</h2>
+        <h2>{verifying ? t('mfa.verified') : t('mfa.title')}</h2>
         <div className="who">
-          {verifying ? '正在进入保险库…' : '输入身份验证器上的 6 位验证码'}
+          {verifying ? t('mfa.entering') : t('mfa.prompt')}
         </div>
 
         <div style={{ position: 'relative', marginTop: 22 }}>
@@ -132,18 +126,18 @@ export default function MfaChallenge({ onVerified, onCancel }: Props): JSX.Eleme
 
         {verifying ? (
           <div className="lock-foot" style={{ marginTop: 10 }}>
-            <span className="spin-ring" /> 校验挑战响应…
+            <span className="spin-ring" /> {t('mfa.verifyingChallenge')}
           </div>
         ) : (
           <div className="lock-foot">
-            <KeyRound size={13} /> 打开身份验证器 App 获取动态验证码
+            <KeyRound size={13} /> {t('mfa.openAuthenticator')}
           </div>
         )}
 
         {onCancel && !verifying && (
           <div className="lock-foot" style={{ marginTop: 10 }}>
             <button type="button" className="lock-link" onClick={onCancel}>
-              返回登录
+              {t('mfa.backToLogin')}
             </button>
           </div>
         )}

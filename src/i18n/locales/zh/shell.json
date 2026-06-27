@@ -1,0 +1,15 @@
+{
+  "lock": {
+    "now": "立即锁定"
+  },
+  "auth": {
+    "invalidKey": "无效的 GPG 私钥。",
+    "keyNotProtected": "此私钥未设置密码保护。为了你的安全，JPassbolt 要求使用带密码保护的私钥。请为你的密钥添加密码后重试。",
+    "userNotFound": "未找到与该 GPG 密钥对应的用户。",
+    "stage1Failed": "GPG 认证第 1 阶段失败：{{detail}}",
+    "stage2Failed": "GPG 认证第 2 阶段失败：{{detail}}",
+    "missingChallengeToken": "服务器未返回质询令牌（缺少 X-GPGAuth-User-Auth-Token 响应头）。",
+    "decryptChallengeFailed": "无法解密服务器质询。你的密码是否正确？",
+    "missingJwt": "认证已完成，但响应头中未返回 JWT 令牌。"
+  }
+}

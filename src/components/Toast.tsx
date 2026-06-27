@@ -5,6 +5,7 @@ import {
     type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 import {
     ToastContext,
@@ -69,6 +70,7 @@ function ToastContainer({
     toasts: ToastItem[];
     onDismiss: (id: number) => void;
 }) {
+    const { t: tr } = useTranslation('components');
     if (toasts.length === 0) return null;
     return createPortal(
         <div className="toast-container">
@@ -76,7 +78,7 @@ function ToastContainer({
                 <div key={t.id} className={`toast toast-${t.variant} animate-fade-in`} role="status">
                     {ICONS[t.variant]}
                     <span className="toast-message">{t.message}</span>
-                    <button className="toast-close" onClick={() => onDismiss(t.id)} aria-label="Dismiss">
+                    <button className="toast-close" onClick={() => onDismiss(t.id)} aria-label={tr('toast.dismiss')}>
                         <X size={14} />
                     </button>
                 </div>

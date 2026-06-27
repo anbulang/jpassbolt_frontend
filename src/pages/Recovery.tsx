@@ -21,6 +21,7 @@
 // never touch the network. completeRecovery sends ONLY the armored public key.
 
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import * as openpgp from 'openpgp';
 import {
@@ -47,9 +48,9 @@ import { loginWithGpg } from '../auth';
 import { requestRecovery, startRecovery, completeRecovery } from '../services/setup';
 import { Stepper } from './flowHelpers';
 import KeyFileButton from '../components/KeyFileButton';
+import { describeApiError } from '../i18n/errors';
+import i18n from '../i18n';
 import type { User } from '../types';
-
-const STEPS = ['账户', '验证', '重设', '完成'];
 
 /** The supported recovery method (CE): re-import the existing key backup. */
 type VerifyMethod = 'backup' | 'code' | 'admin';
@@ -60,25 +61,23 @@ function formatFingerprint(fp: string): string {
   return up.replace(/(.{4})/g, '$1 ').trim();
 }
 
-/** Best-effort error message extraction (axios envelope -> Error -> string). */
-function errMessage(err: unknown, fallback: string): string {
-  const e = err as {
-    response?: { data?: { header?: { message?: string } } };
-    message?: string;
-  };
-  return e?.response?.data?.header?.message || e?.message || fallback;
-}
-
 /** Full display name from a profile, falling back to the username. */
 function fullName(user: User | null): string {
   const f = user?.profile?.first_name?.trim() ?? '';
   const l = user?.profile?.last_name?.trim() ?? '';
-  return [f, l].filter(Boolean).join(' ') || user?.username || '账户';
+  return [f, l].filter(Boolean).join(' ') || user?.username || i18n.t('auth:recovery.accountFallback');
 }
 
 export default function Recovery() {
+  const { t } = useTranslation('auth');
   const navigate = useNavigate();
   const { setArmoredKeys, unlock } = useKey();
+  const STEPS = [
+    t('recovery.steps.account'),
+    t('recovery.steps.verify'),
+    t('recovery.steps.reset'),
+    t('recovery.steps.done'),
+  ];
 
   // Accept BOTH /recover/:userId/:tokenId AND /recover?user_id=...&token=...
   const params = useParams<{ userId?: string; tokenId?: string }>();
@@ -155,7 +154,7 @@ export default function Recovery() {
     } catch (err: unknown) {
       // Backends often respond 200 regardless (to avoid account enumeration); if
       // a real error comes back, surface it verbatim.
-      setError(errMessage(err, '无法发送恢复邮件，请稍后重试或联系管理员。'));
+      setError(describeApiError(err) || t('recovery.errors.sendFailed'));
     } finally {
       setLoading(false);
     }
@@ -172,7 +171,7 @@ export default function Recovery() {
       setLinkValidated(true);
       setStep(1);
     } catch (err: unknown) {
-      setError(errMessage(err, '恢复链接无效或已过期，请重新发起账户恢复。'));
+      setError(describeApiError(err) || t('recovery.errors.linkInvalid'));
     } finally {
       setLoading(false);
     }
@@ -189,13 +188,11 @@ export default function Recovery() {
     try {
       const armored = importArmored.trim();
       if (!armored) {
-        throw new Error('请先粘贴你之前导出的 OpenPGP 私钥备份（.asc）。');
+        throw new Error(t('recovery.errors.missingBackup'));
       }
       const parsed = await openpgp.readPrivateKey({ armoredKey: armored });
       if (parsed.isDecrypted()) {
-        throw new Error(
-          '该私钥未受 passphrase 保护。为了安全，JPassbolt 要求使用受 passphrase 保护的私钥。',
-        );
+        throw new Error(t('recovery.errors.keyNotProtected'));
       }
       // Throws if the passphrase is wrong (verified entirely client-side).
       await openpgp.decryptKey({ privateKey: parsed, passphrase: pf });
@@ -206,9 +203,7 @@ export default function Recovery() {
       setFingerprint(fp);
       setStep(2);
     } catch (err: unknown) {
-      setError(
-        errMessage(err, '无法用该 passphrase 解锁导入的私钥，请检查私钥备份与 passphrase。'),
-      );
+      setError(describeApiError(err) || t('recovery.errors.unlockFailed'));
     } finally {
       setLoading(false);
     }
@@ -233,7 +228,7 @@ export default function Recovery() {
       await unlock(pf);
       setStep(3);
     } catch (err: unknown) {
-      setError(errMessage(err, '账户恢复失败，请检查私钥是否属于此账户后重试。'));
+      setError(describeApiError(err) || t('recovery.errors.recoverFailed'));
     } finally {
       setLoading(false);
     }
@@ -247,11 +242,11 @@ export default function Recovery() {
             <span className="lg">
               <KeyRound />
             </span>
-            <span className="bn">账户恢复</span>
+            <span className="bn">{t('recovery.brand')}</span>
             <button
               className="iconbtn bx"
               onClick={() => navigate('/login')}
-              title="返回登录"
+              title={t('recovery.backToLogin')}
               style={{
                 marginLeft: 'auto',
                 background: 'none',
@@ -276,16 +271,16 @@ export default function Recovery() {
             >
               <Puzzle />
               <div style={{ flex: 1 }}>
-                <strong>安装 JPassbolt 浏览器扩展</strong>
+                <strong>{t('extPrompt.title')}</strong>
                 <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 2 }}>
-                  网页版可直接完成恢复；安装扩展可获得跨站自动填表与更强的密钥隔离（可选）。
+                  {t('extPrompt.descRecovery')}
                 </div>
               </div>
               <button
                 type="button"
                 className="pf-eye"
                 onClick={() => setExtDismissed(true)}
-                title="忽略"
+                title={t('extPrompt.dismiss')}
               >
                 <X size={16} />
               </button>
@@ -305,9 +300,9 @@ export default function Recovery() {
                 <div className="flow-badge">
                   <RefreshCw />
                 </div>
-                <h2>找回你的账户</h2>
+                <h2>{t('recovery.request.title')}</h2>
                 <p>
-                  丢失了设备或忘记如何登录？验证身份后，用你保存的密钥备份重新获得保险库访问权。
+                  {t('recovery.request.subtitle')}
                 </p>
               </div>
 
@@ -316,9 +311,9 @@ export default function Recovery() {
                   <div className="invite-meta" style={{ marginBottom: 18 }}>
                     <div className="invite-line">
                       <Mail />
-                      <span className="k">恢复链接</span>
+                      <span className="k">{t('recovery.request.linkLabel')}</span>
                       <span className="v" style={{ marginLeft: 'auto', color: 'var(--text-2)' }}>
-                        待校验
+                        {t('recovery.request.linkPending')}
                       </span>
                     </div>
                   </div>
@@ -330,14 +325,14 @@ export default function Recovery() {
                   >
                     {loading ? (
                       <>
-                        <span className="spin-ring" /> 正在校验恢复链接…
+                        <span className="spin-ring" /> {t('recovery.request.validating')}
                       </>
                     ) : (
-                      '校验链接并继续'
+                      t('recovery.request.validateAndContinue')
                     )}
                   </button>
                   <div className="flow-note">
-                    <ShieldCheck /> 恢复不会暴露你的私钥或 passphrase
+                    <ShieldCheck /> {t('recovery.request.noteNoExpose')}
                   </div>
                 </>
               ) : sent ? (
@@ -350,23 +345,23 @@ export default function Recovery() {
                       <CheckCircle2 />
                     </span>
                     <div className="kr-t">
-                      <div className="a">请查收邮件</div>
+                      <div className="a">{t('recovery.request.sentTitle')}</div>
                       <div className="b">
-                        若该邮箱对应一个账户，我们已发送一封含恢复链接的邮件。
+                        {t('recovery.request.sentDesc')}
                       </div>
                     </div>
                   </div>
                   <div className="warn-soft">
-                    <Mail /> 请从邮件中打开恢复链接以继续（链接含一次性恢复令牌）。
+                    <Mail /> {t('recovery.request.sentHint')}
                   </div>
                   <div className="flow-note">
-                    <ShieldCheck /> 恢复不会暴露你的私钥或 passphrase
+                    <ShieldCheck /> {t('recovery.request.noteNoExpose')}
                   </div>
                 </>
               ) : (
                 <>
                   <div className="pf-label">
-                    <UserIcon size={15} /> 账户邮箱
+                    <UserIcon size={15} /> {t('recovery.request.emailLabel')}
                   </div>
                   <div className="pf-input">
                     <Mail size={17} />
@@ -374,7 +369,7 @@ export default function Recovery() {
                       type="email"
                       autoFocus
                       value={email}
-                      placeholder="you@acme.io"
+                      placeholder={t('recovery.request.emailPlaceholder')}
                       style={{ letterSpacing: 0, fontFamily: 'var(--sans)' }}
                       onChange={(e) => setEmail(e.target.value)}
                     />
@@ -387,14 +382,14 @@ export default function Recovery() {
                   >
                     {loading ? (
                       <>
-                        <span className="spin-ring" /> 正在发送…
+                        <span className="spin-ring" /> {t('recovery.request.sending')}
                       </>
                     ) : (
-                      '继续'
+                      t('recovery.request.continue')
                     )}
                   </button>
                   <div className="flow-note">
-                    <ShieldCheck /> 恢复不会暴露你旧的私钥或 passphrase
+                    <ShieldCheck /> {t('recovery.request.noteNoExposeOld')}
                   </div>
                 </>
               )}
@@ -408,10 +403,11 @@ export default function Recovery() {
                 <div className="flow-badge">
                   <ShieldCheck />
                 </div>
-                <h2>验证身份</h2>
+                <h2>{t('recovery.verify.title')}</h2>
                 <p>
-                  导入你之前导出的密钥备份并输入其 passphrase。服务器将校验该密钥确属
-                  {linkValidated && user ? ` ${fullName(user)} ` : '你的账户'}。
+                  {t('recovery.verify.subtitlePrefix')}
+                  {linkValidated && user ? ` ${fullName(user)} ` : ` ${t('recovery.verify.subtitleAccountFallback')}`}
+                  {t('recovery.verify.subtitleSuffix')}
                 </p>
               </div>
 
@@ -425,9 +421,9 @@ export default function Recovery() {
                 </span>
                 <div className="oc-t">
                   <div className="a">
-                    导入密钥备份 <span className="recommend">支持</span>
+                    {t('recovery.verify.methodBackupTitle')} <span className="recommend">{t('recovery.verify.methodBackupBadge')}</span>
                   </div>
-                  <div className="b">上传你之前导出的受 passphrase 保护的私钥备份（.asc）。</div>
+                  <div className="b">{t('recovery.verify.methodBackupDesc')}</div>
                 </div>
                 <span className="oc-radio" />
               </div>
@@ -436,32 +432,32 @@ export default function Recovery() {
               <div
                 className="opt-card"
                 style={{ opacity: 0.55, cursor: 'not-allowed' }}
-                title="暂未支持"
+                title={t('recovery.verify.unsupportedTitle')}
               >
                 <span className="oc-ico">
                   <KeyRound />
                 </span>
                 <div className="oc-t">
                   <div className="a">
-                    恢复码 <span className="recommend" style={{ background: 'var(--surface-3)', color: 'var(--text-3)' }}>暂未支持</span>
+                    {t('recovery.verify.methodCodeTitle')} <span className="recommend" style={{ background: 'var(--surface-3)', color: 'var(--text-3)' }}>{t('recovery.verify.unsupportedBadge')}</span>
                   </div>
-                  <div className="b">使用注册时保存的一次性恢复码（当前版本暂未支持）。</div>
+                  <div className="b">{t('recovery.verify.methodCodeDesc')}</div>
                 </div>
                 <span className="oc-radio" />
               </div>
               <div
                 className="opt-card"
                 style={{ opacity: 0.55, cursor: 'not-allowed' }}
-                title="暂未支持"
+                title={t('recovery.verify.unsupportedTitle')}
               >
                 <span className="oc-ico">
                   <Users />
                 </span>
                 <div className="oc-t">
                   <div className="a">
-                    管理员协助 <span className="recommend" style={{ background: 'var(--surface-3)', color: 'var(--text-3)' }}>暂未支持</span>
+                    {t('recovery.verify.methodAdminTitle')} <span className="recommend" style={{ background: 'var(--surface-3)', color: 'var(--text-3)' }}>{t('recovery.verify.unsupportedBadge')}</span>
                   </div>
-                  <div className="b">由组织管理员审批为你重建访问权（当前版本暂未支持）。</div>
+                  <div className="b">{t('recovery.verify.methodAdminDesc')}</div>
                 </div>
                 <span className="oc-radio" />
               </div>
@@ -473,16 +469,16 @@ export default function Recovery() {
                     style={{ display: 'flex', alignItems: 'center', margin: '0 0 6px' }}
                   >
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      <Download size={15} /> 粘贴或选择 .asc 私钥备份
+                      <Download size={15} /> {t('recovery.verify.pasteLabel')}
                     </span>
                     <span style={{ marginLeft: 'auto' }}>
                       {/* 可选：选择本地 .asc 私钥备份文件填入下方文本框；仍可直接粘贴。文件仅在浏览器内读取。 */}
-                      <KeyFileButton onLoaded={(t) => setImportArmored(t)} label="选择 .asc 备份" />
+                      <KeyFileButton onLoaded={(txt) => setImportArmored(txt)} label={t('recovery.verify.chooseBackup')} />
                     </span>
                   </div>
                   <textarea
                     className="flow-textarea"
-                    placeholder="-----BEGIN PGP PRIVATE KEY BLOCK-----"
+                    placeholder={t('recovery.verify.keyPlaceholder')}
                     value={importArmored}
                     onChange={(e) => setImportArmored(e.target.value)}
                     rows={6}
@@ -491,14 +487,14 @@ export default function Recovery() {
                   />
 
                   <div className="pf-label" style={{ marginTop: 14 }}>
-                    <KeyRound size={15} /> 该备份的 passphrase
+                    <KeyRound size={15} /> {t('recovery.verify.passphraseLabel')}
                   </div>
                   <div className="pf-input">
                     <Lock size={17} />
                     <input
                       type={showPf ? 'text' : 'password'}
                       value={pf}
-                      placeholder="••••••••••••"
+                      placeholder={t('recovery.verify.passphrasePlaceholder')}
                       onChange={(e) => setPf(e.target.value)}
                     />
                     <button
@@ -514,7 +510,7 @@ export default function Recovery() {
 
               <div className="flow-foot">
                 <button className="btn" onClick={() => navigate('/login')}>
-                  返回登录
+                  {t('recovery.verify.backToLogin')}
                 </button>
                 <span className="spacer" />
                 <button
@@ -529,10 +525,10 @@ export default function Recovery() {
                 >
                   {loading ? (
                     <>
-                      <span className="spin-ring" /> 校验密钥…
+                      <span className="spin-ring" /> {t('recovery.verify.verifyingKey')}
                     </>
                   ) : (
-                    '下一步'
+                    t('recovery.verify.next')
                   )}
                 </button>
               </div>
@@ -546,15 +542,15 @@ export default function Recovery() {
                 <div className="flow-badge">
                   <Lock />
                 </div>
-                <h2>确认并恢复访问权</h2>
+                <h2>{t('recovery.reset.title')}</h2>
                 <p>
-                  你的密钥备份已在本地通过 passphrase 解锁。提交后服务器将校验指纹一致并恢复你的访问权。
+                  {t('recovery.reset.subtitle')}
                 </p>
               </div>
 
               <div className="done-fp">
                 <div className="dfp-l">
-                  <Fingerprint /> 待校验的公钥指纹
+                  <Fingerprint /> {t('recovery.reset.fingerprintLabel')}
                 </div>
                 <div className="dfp-v">{formatFingerprint(fingerprint)}</div>
               </div>
@@ -562,12 +558,12 @@ export default function Recovery() {
               <div className="invite-meta" style={{ marginBottom: 18 }}>
                 <div className="invite-line">
                   <UserIcon />
-                  <span className="k">账户</span>
+                  <span className="k">{t('recovery.reset.accountLabel')}</span>
                   <span className="v">{fullName(user)}</span>
                 </div>
                 <div className="invite-line">
                   <Mail />
-                  <span className="k">用户名</span>
+                  <span className="k">{t('recovery.reset.usernameLabel')}</span>
                   <span className="v mono" style={{ fontSize: 12.5 }}>
                     {user?.username ?? ''}
                   </span>
@@ -575,12 +571,12 @@ export default function Recovery() {
               </div>
 
               <div className="warn-soft">
-                <AlertTriangle /> 服务器仅接受与此账户既有密钥指纹一致的密钥；若不一致将被拒绝。
+                <AlertTriangle /> {t('recovery.reset.warning')}
               </div>
 
               <div className="flow-foot">
                 <button className="btn" onClick={() => setStep(1)} disabled={loading}>
-                  上一步
+                  {t('recovery.reset.prev')}
                 </button>
                 <span className="spacer" />
                 <button
@@ -590,11 +586,11 @@ export default function Recovery() {
                 >
                   {loading ? (
                     <>
-                      <span className="spin-ring" /> 正在恢复…
+                      <span className="spin-ring" /> {t('recovery.reset.recovering')}
                     </>
                   ) : (
                     <>
-                      <RefreshCw size={16} /> 恢复账户
+                      <RefreshCw size={16} /> {t('recovery.reset.recover')}
                     </>
                   )}
                 </button>
@@ -609,30 +605,30 @@ export default function Recovery() {
                 <div className="flow-badge green">
                   <ShieldCheck />
                 </div>
-                <h2>账户已恢复</h2>
-                <p>你的密钥已重新验证，你重新获得了对保险库的访问权。</p>
+                <h2>{t('recovery.done.title')}</h2>
+                <p>{t('recovery.done.subtitle')}</p>
               </div>
 
               <div className="invite-meta" style={{ marginBottom: 18 }}>
                 <div className="invite-line">
                   <CheckCircle2 />
-                  <span className="k">身份验证</span>
+                  <span className="k">{t('recovery.done.identityLabel')}</span>
                   <span className="v" style={{ marginLeft: 'auto', color: 'var(--green-text)' }}>
-                    已通过
+                    {t('recovery.done.identityValue')}
                   </span>
                 </div>
                 <div className="invite-line">
                   <KeyRound />
-                  <span className="k">密钥指纹</span>
+                  <span className="k">{t('recovery.done.fingerprintLabel')}</span>
                   <span className="v" style={{ marginLeft: 'auto', color: 'var(--green-text)' }}>
-                    已匹配
+                    {t('recovery.done.fingerprintValue')}
                   </span>
                 </div>
                 <div className="invite-line">
                   <Unlock />
-                  <span className="k">保险库</span>
+                  <span className="k">{t('recovery.done.vaultLabel')}</span>
                   <span className="v" style={{ marginLeft: 'auto', color: 'var(--text-2)' }}>
-                    已解锁
+                    {t('recovery.done.vaultValue')}
                   </span>
                 </div>
               </div>
@@ -642,10 +638,10 @@ export default function Recovery() {
                 style={{ width: '100%', height: 44, fontSize: 14 }}
                 onClick={() => navigate('/')}
               >
-                <Unlock size={16} /> 进入保险库
+                <Unlock size={16} /> {t('recovery.done.enterVault')}
               </button>
               <div className="flow-note">
-                <ShieldCheck /> 私钥与 passphrase 从未离开此设备
+                <ShieldCheck /> {t('recovery.done.note')}
               </div>
             </>
           )}

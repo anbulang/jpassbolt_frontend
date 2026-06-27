@@ -14,6 +14,7 @@
  * and resets all reveal state.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
 import {
   Lock,
   Unlock,
@@ -41,6 +42,8 @@ import { listComments, addComment } from '../../services/comments';
 import { useKey } from '../../crypto/KeyContext';
 import { useToast } from '../../components/toastContext';
 import { useTheme } from '../../theme';
+import i18n from '../../i18n';
+import { describeApiError } from '../../i18n/errors';
 import { decodeSecret, isEncryptedDescriptionType } from './secretFormat';
 import { isV5Resource } from './resourceMetadata';
 
@@ -78,9 +81,14 @@ function expiryInfo(iso: string | null | undefined): ExpiryInfo | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   const days = Math.round((d.getTime() - Date.now()) / 86_400_000);
-  if (days < 0) return { state: 'expired', label: '已过期', chip: 'red' };
-  if (days <= 14) return { state: 'soon', label: days === 0 ? '今天过期' : `${days} 天后过期`, chip: 'amber' };
-  return { state: 'ok', label: `${days} 天后过期`, chip: 'neutral' };
+  if (days < 0) return { state: 'expired', label: i18n.t('vault:expiry.expired'), chip: 'red' };
+  if (days <= 14)
+    return {
+      state: 'soon',
+      label: days === 0 ? i18n.t('vault:expiry.today') : i18n.t('vault:expiry.inDays', { days }),
+      chip: 'amber',
+    };
+  return { state: 'ok', label: i18n.t('vault:expiry.inDays', { days }), chip: 'neutral' };
 }
 
 function pwStrength(pw: string): 1 | 2 | 3 | 4 {
@@ -103,7 +111,7 @@ function formatDate(value: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
 }
 
-const PERM_LABEL: Record<number, string> = { 15: '拥有者', 7: '可编辑', 1: '只读' };
+const PERM_LABEL_KEY: Record<number, string> = { 15: 'perm.owner', 7: 'perm.edit', 1: 'perm.read' };
 
 // ---------------------------------------------------------------------------
 // Encrypted secret field — the E2EE reveal moment
@@ -119,6 +127,7 @@ function SecretField({
   isV5: boolean;
   onDecrypted: (content: { password: string; description: string }) => void;
 }) {
+  const { t } = useTranslation('vault');
   const { decrypt, isLocked } = useKey();
   const toast = useToast();
   const { prefs } = useTheme();
@@ -169,10 +178,7 @@ function SecretField({
         });
       }, 1000);
     } catch (err) {
-      const msg =
-        (err as { response?: { data?: { header?: { message?: string } } } })?.response?.data?.header
-          ?.message || (err instanceof Error ? err.message : '解密失败。');
-      setError(msg);
+      setError(describeApiError(err));
       setState('locked');
     }
   }, [state, isLocked, resource.id, decrypt, slug, prefs.revealSecs, relock, onDecrypted]);
@@ -180,14 +186,14 @@ function SecretField({
   const copyBurn = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(password);
-      toast.success(`已复制密码 · ${prefs.burnSecs} 秒后清空剪贴板`);
+      toast.success(t('secret.copiedBurn', { seconds: prefs.burnSecs }));
       window.setTimeout(() => {
         navigator.clipboard?.writeText('').catch(() => {});
       }, prefs.burnSecs * 1000);
     } catch {
-      toast.error('无法访问剪贴板。');
+      toast.error(t('secret.clipboardError'));
     }
-  }, [password, prefs.burnSecs, toast]);
+  }, [password, prefs.burnSecs, toast, t]);
 
   const open = state === 'open';
   const dots = '•'.repeat(12);
@@ -197,7 +203,7 @@ function SecretField({
     <div className={`field secret-field${open ? ' unlocked' : ''}${state === 'decrypting' ? ' decrypting' : ''}`}>
       <div className="field-label">
         {open ? <Unlock /> : <Lock />}
-        密码 · {open ? '已解密（本地）' : '加密存储'}
+        {t('secret.passwordLabel')} · {open ? t('secret.decryptedLocal') : t('secret.encryptedStored')}
       </div>
       <div className="field-row">
         {open ? (
@@ -205,16 +211,16 @@ function SecretField({
         ) : (
           <div className={`secret-cipher${state === 'decrypting' ? ' scramble' : ''}`}>
             <Lock className="lk" />
-            {state === 'decrypting' ? '解密中…' : dots}
+            {state === 'decrypting' ? t('secret.decrypting') : dots}
           </div>
         )}
         {open ? (
-          <button className="copybtn" title="复制密码" onClick={() => void copyBurn()}>
+          <button className="copybtn" title={t('actions.copyPassword')} onClick={() => void copyBurn()}>
             <Copy />
           </button>
         ) : (
           <button className="btn sm" onClick={() => void reveal()} disabled={state === 'decrypting' || isLocked}>
-            <Eye /> {state === 'decrypting' ? '解密中' : '显示'}
+            <Eye /> {state === 'decrypting' ? t('secret.decryptingShort') : t('secret.reveal')}
           </button>
         )}
       </div>
@@ -233,16 +239,16 @@ function SecretField({
 
       {open && (
         <div className="relock-note">
-          <Clock /> {remain}s 后自动重新锁定 ·{' '}
+          <Clock /> {t('secret.relockNote', { seconds: remain })}{' '}
           <button onClick={relock} type="button">
-            立即锁定
+            {t('actions.lockNow')}
           </button>
         </div>
       )}
 
       <div className="field-foot">
         <div className={`strength s${strength}`}>
-          强度
+          {t('secret.strength')}
           <div className="bars">
             <i />
             <i />
@@ -255,25 +261,26 @@ function SecretField({
                 color: strength >= 4 ? 'var(--green-text)' : strength <= 2 ? 'var(--amber-text)' : 'var(--text-3)',
               }}
             >
-              {strength >= 4 ? '很强' : strength === 3 ? '良好' : '偏弱'}
+              {strength >= 4 ? t('secret.strengthStrong') : strength === 3 ? t('secret.strengthGood') : t('secret.strengthWeak')}
             </span>
           )}
         </div>
         <span>·</span>
-        <span>{isV5 ? 'v5 元数据加密' : '端到端加密'}</span>
+        <span>{isV5 ? t('secret.v5MetadataEncrypted') : t('secret.e2ee')}</span>
       </div>
     </div>
   );
 }
 
 function PlainField({ label, icon, value }: { label: string; icon: ReactNode; value: string }) {
+  const { t } = useTranslation('vault');
   const toast = useToast();
   const [ok, setOk] = useState(false);
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(value);
       setOk(true);
-      toast.success(`已复制${label}`);
+      toast.success(t('copy.copied', { label }));
       window.setTimeout(() => setOk(false), 1400);
     } catch {
       /* ignore */
@@ -287,7 +294,7 @@ function PlainField({ label, icon, value }: { label: string; icon: ReactNode; va
       <div className="field-row">
         <div className="field-val mono">{value || '—'}</div>
         {value && (
-          <button className={`copybtn${ok ? ' ok' : ''}`} title="复制" onClick={() => void copy()}>
+          <button className={`copybtn${ok ? ' ok' : ''}`} title={t('common:actions.copy')} onClick={() => void copy()}>
             {ok ? <Check /> : <Copy />}
           </button>
         )}
@@ -321,6 +328,7 @@ export function SecretPanel({
   onMove,
   favBusy,
 }: SecretPanelProps) {
+  const { t } = useTranslation('vault');
   const [tab, setTab] = useState<'detail' | 'shared' | 'comment'>('detail');
 
   const slug = resourceTypes.find((rt) => rt.id === resource.resource_type_id)?.slug;
@@ -381,10 +389,7 @@ export function SecretPanel({
       setDraft('');
       await loadComments();
     } catch (err) {
-      const msg =
-        (err as { response?: { data?: { header?: { message?: string } } } })?.response?.data?.header
-          ?.message || '发送评论失败。';
-      toast.error(msg);
+      toast.error(describeApiError(err));
     } finally {
       setPosting(false);
     }
@@ -421,7 +426,7 @@ export function SecretPanel({
             )}
             <div className="panel-meta-row">
               <span className="chip neutral">
-                <Lock /> 端到端加密
+                <Lock /> {t('panel.e2ee')}
               </span>
               {exp && (
                 <span className={`chip ${exp.chip}`}>
@@ -430,7 +435,7 @@ export function SecretPanel({
               )}
               {accessCount !== undefined && (
                 <span className="chip neutral">
-                  <Share2 /> {accessCount} 个访问者
+                  <Share2 /> {t('panel.accessCount', { count: accessCount })}
                 </span>
               )}
             </div>
@@ -438,24 +443,24 @@ export function SecretPanel({
           <div className="panel-actions">
             <button
               className={`iconbtn${resource.favorite ? ' on' : ''}`}
-              title={resource.favorite ? '取消收藏' : '收藏'}
+              title={resource.favorite ? t('actions.unfavorite') : t('actions.favorite')}
               onClick={() => onToggleFavorite(resource)}
               disabled={favBusy}
             >
               <Star style={resource.favorite ? { fill: 'currentColor' } : undefined} />
             </button>
-            <button className="iconbtn" title="编辑" onClick={() => onEdit(resource)}>
+            <button className="iconbtn" title={t('common:actions.edit')} onClick={() => onEdit(resource)}>
               <Pencil />
             </button>
             {onMove && (
-              <button className="iconbtn" title="移动到…" onClick={() => onMove(resource)}>
+              <button className="iconbtn" title={t('actions.moveTo')} onClick={() => onMove(resource)}>
                 <MoveIcon />
               </button>
             )}
             {onDelete && (
               <button
                 className="iconbtn"
-                title="删除"
+                title={t('common:actions.delete')}
                 style={{ color: 'var(--red-text)' }}
                 onClick={() => onDelete(resource)}
               >
@@ -463,7 +468,7 @@ export function SecretPanel({
               </button>
             )}
             <button className="btn primary" onClick={() => onShare(resource)}>
-              <Share2 /> 共享
+              <Share2 /> {t('actions.share')}
             </button>
           </div>
         </div>
@@ -471,19 +476,19 @@ export function SecretPanel({
         {/* tabs */}
         <div className="panel-tabs">
           <button className={`ptab${tab === 'detail' ? ' active' : ''}`} onClick={() => setTab('detail')}>
-            <KeyRound /> 凭据
+            <KeyRound /> {t('panel.tabDetail')}
           </button>
           <button className={`ptab${tab === 'shared' ? ' active' : ''}`} onClick={() => setTab('shared')}>
-            <Share2 /> 共享 {accessCount !== undefined && <span className="num">{accessCount}</span>}
+            <Share2 /> {t('panel.tabShared')} {accessCount !== undefined && <span className="num">{accessCount}</span>}
           </button>
           <button className={`ptab${tab === 'comment' ? ' active' : ''}`} onClick={() => setTab('comment')}>
-            <MessageSquare /> 评论 {comments && comments.length > 0 && <span className="num">{comments.length}</span>}
+            <MessageSquare /> {t('panel.tabComment')} {comments && comments.length > 0 && <span className="num">{comments.length}</span>}
           </button>
         </div>
 
         {tab === 'detail' && (
           <div className="panel-body">
-            <PlainField label="用户名" icon={<UserIcon />} value={resource.username} />
+            <PlainField label={t('panel.fieldUsername')} icon={<UserIcon />} value={resource.username} />
             <SecretField
               resource={resource}
               slug={slug}
@@ -495,7 +500,7 @@ export function SecretPanel({
             {description && (
               <div className="field">
                 <div className="field-label">
-                  <MessageSquare /> 描述
+                  <MessageSquare /> {t('panel.fieldDescription')}
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
                   {description}
@@ -504,15 +509,15 @@ export function SecretPanel({
             )}
             <div style={{ padding: '4px 2px' }}>
               <div className="drow">
-                <div className="dk">最后修改</div>
+                <div className="dk">{t('panel.lastModified')}</div>
                 <div className="dv">{formatDate(resource.modified)}</div>
               </div>
               <div className="drow">
-                <div className="dk">创建于</div>
+                <div className="dk">{t('panel.createdAt')}</div>
                 <div className="dv">{formatDate(resource.created)}</div>
               </div>
               <div className="drow">
-                <div className="dk">资源 ID</div>
+                <div className="dk">{t('panel.resourceId')}</div>
                 <div className="dv mono">{resource.id.toUpperCase()}</div>
               </div>
             </div>
@@ -523,30 +528,35 @@ export function SecretPanel({
           <div className="panel-body">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <span style={{ fontSize: 12.5, color: 'var(--text-3)' }}>
-                此密文已为 <b style={{ color: 'var(--text-2)' }}>{accessCount ?? '…'}</b> 个对象单独加密
+                <Trans
+                  i18nKey="panel.encryptedForCount"
+                  t={t}
+                  values={{ count: accessCount ?? '…' }}
+                  components={[<span />, <b style={{ color: 'var(--text-2)' }} />]}
+                />
               </span>
               <button className="btn sm" onClick={() => onShare(resource)}>
-                <Plus /> 添加
+                <Plus /> {t('actions.add')}
               </button>
             </div>
             {perms === null ? (
               <div style={{ textAlign: 'center', color: 'var(--text-3)', padding: '20px 0', fontSize: 13 }}>
-                <span className="spin-ring" /> 正在加载访问列表…
+                <span className="spin-ring" /> {t('panel.loadingAccess')}
               </div>
             ) : perms.length === 0 ? (
               <div style={{ textAlign: 'center', color: 'var(--text-3)', padding: '20px 0', fontSize: 13 }}>
-                还没有其他访问者。
+                {t('panel.noOtherViewers')}
               </div>
             ) : (
               <div>
                 {perms.map((p) => {
                   const isGroup = p.aro === 'Group';
                   const name = isGroup
-                    ? p.group?.name ?? '群组'
+                    ? p.group?.name ?? t('panel.groupFallback')
                     : [p.user?.profile?.first_name, p.user?.profile?.last_name].filter(Boolean).join(' ') ||
                       p.user?.username ||
-                      '用户';
-                  const email = isGroup ? '群组共享' : p.user?.username ?? '';
+                      t('panel.userFallback');
+                  const email = isGroup ? t('panel.groupShare') : p.user?.username ?? '';
                   const av = isGroup ? (
                     <span className="aro-av" style={{ background: tileColor(p.aro_foreign_key) }}>
                       <UsersIcon size={15} />
@@ -564,7 +574,7 @@ export function SecretPanel({
                         <div className="ae">{email}</div>
                       </div>
                       <span className={`perm-badge${p.type === 15 ? ' owner' : ''}`}>
-                        {PERM_LABEL[p.type] ?? `级别 ${p.type}`}
+                        {PERM_LABEL_KEY[p.type] ? t(PERM_LABEL_KEY[p.type]) : t('panel.permLevel', { level: p.type })}
                       </span>
                     </div>
                   );
@@ -578,11 +588,11 @@ export function SecretPanel({
           <div className="panel-body">
             {comments === null ? (
               <div style={{ textAlign: 'center', color: 'var(--text-3)', padding: '20px 0', fontSize: 13 }}>
-                <span className="spin-ring" /> 正在加载评论…
+                <span className="spin-ring" /> {t('panel.loadingComments')}
               </div>
             ) : comments.length === 0 ? (
               <div style={{ textAlign: 'center', color: 'var(--text-3)', padding: '20px 0 8px', fontSize: 13 }}>
-                还没有评论。讨论会与凭据一同保留。
+                {t('panel.noComments')}
               </div>
             ) : (
               comments.map((c) => {
@@ -590,7 +600,7 @@ export function SecretPanel({
                 const name =
                   [author?.profile?.first_name, author?.profile?.last_name].filter(Boolean).join(' ') ||
                   author?.username ||
-                  '用户';
+                  t('panel.userFallback');
                 return (
                   <div className="comment" key={c.id}>
                     <div className="face" style={{ background: tileColor(c.user_id) }}>
@@ -609,7 +619,7 @@ export function SecretPanel({
             )}
             <div className="comment-box">
               <textarea
-                placeholder="写下评论…"
+                placeholder={t('panel.commentPlaceholder')}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -622,7 +632,7 @@ export function SecretPanel({
                 style={{ alignSelf: 'flex-end' }}
                 onClick={() => void submitComment()}
               >
-                {posting ? '发送中…' : '发送'}
+                {posting ? t('panel.sendingComment') : t('panel.sendComment')}
               </button>
             </div>
           </div>

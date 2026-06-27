@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 interface AvatarProps {
     /** Already-resolved image URL (e.g. profile.avatar.url.small). Falls back to initials when absent. */
     src?: string | null;
@@ -29,9 +31,10 @@ function initialsFrom(first?: string | null, last?: string | null, name?: string
  * on a tinted background. Presentational only.
  */
 export function Avatar({ src, firstName, lastName, name, size = 36 }: AvatarProps) {
+    const { t } = useTranslation('components');
     const initials = initialsFrom(firstName, lastName, name);
     const fontSize = Math.max(10, Math.round(size * 0.4));
-    const alt = [firstName, lastName].filter(Boolean).join(' ') || name || 'User avatar';
+    const alt = [firstName, lastName].filter(Boolean).join(' ') || name || t('avatar.alt');
 
     return (
         <span className="avatar" style={{ width: size, height: size, fontSize }} title={alt}>

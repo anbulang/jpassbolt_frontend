@@ -11,6 +11,7 @@
 
 import { useRef } from 'react';
 import type { ChangeEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Upload } from 'lucide-react';
 
 interface KeyFileButtonProps {
@@ -20,7 +21,8 @@ interface KeyFileButtonProps {
   label?: string;
 }
 
-export default function KeyFileButton({ onLoaded, label = '选择密钥文件' }: KeyFileButtonProps) {
+export default function KeyFileButton({ onLoaded, label }: KeyFileButtonProps) {
+  const { t } = useTranslation('components');
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -62,7 +64,7 @@ export default function KeyFileButton({ onLoaded, label = '选择密钥文件' }
         style={{ display: 'none' }}
       />
       <button type="button" className="btn sm" onClick={() => inputRef.current?.click()}>
-        <Upload size={15} /> {label}
+        <Upload size={15} /> {label ?? t('keyFile.select')}
       </button>
     </>
   );

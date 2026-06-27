@@ -1,0 +1,42 @@
+{
+  "lock": {
+    "accountFallback": "账户",
+    "titleRestoring": "正在恢复会话…",
+    "titleUnlocking": "正在解锁密钥…",
+    "titleLocked": "保险库已锁定",
+    "subtitleRestoring": "用已缓存的口令在本地恢复你的会话",
+    "subtitleLocked": "输入 passphrase 在本地解密你的私钥",
+    "spinnerRestoring": "正在用已缓存的口令恢复会话…",
+    "spinnerUnlocking": "用 passphrase 解密本地私钥…",
+    "inputLabel": "输入 passphrase 解锁",
+    "submit": "解锁",
+    "note": "passphrase 仅用于本地解密，永不上传"
+  },
+  "errors": {
+    "noStoredKey": "本地没有可解锁的私钥，请重新登录。",
+    "readStoredKey": "读取本地私钥失败。",
+    "keyNotProtected": "你存储的私钥未设置 passphrase 保护。为了你的安全，请使用受 passphrase 保护的私钥重新登录。",
+    "incorrectPassphrase": "passphrase 不正确，无法解锁密钥。",
+    "decryptMessage": "解密消息失败。",
+    "vaultLocked": "保险库已锁定，请用 passphrase 解锁后再解密。",
+    "noRecipientKey": "未提供用于加密的接收方公钥。",
+    "ownPublicKeyUnavailable": "你的公钥不可用。请先解锁保险库再创建密码。",
+    "readPrivateKey": "读取私钥失败：{{detail}}",
+    "decryptPrivateKey": "解密私钥失败，passphrase 是否正确？",
+    "decryptMessageDetail": "解密消息失败：{{detail}}",
+    "extractKeyId": "提取密钥 ID 失败：{{detail}}"
+  },
+  "metadata": {
+    "errors": {
+      "loadFailed": "加载共享元数据密钥失败。",
+      "blobMalformed": "共享元数据私钥数据格式不正确。",
+      "requiresPassphrase": "共享元数据私钥需要我们没有的 passphrase。",
+      "fingerprintMismatchDeclared": "共享元数据私钥指纹不匹配：恢复出的密钥与其声明的指纹不符，拒绝信任。",
+      "fingerprintMismatchActive": "共享元数据私钥指纹不匹配：恢复出的密钥与当前生效的元数据密钥记录不符，拒绝信任。",
+      "keyUnavailable": "共享元数据密钥不可用。请解锁保险库并确认已配置元数据密钥。",
+      "decryptMetadata": "解密资源元数据失败。",
+      "noUsableKey": "没有可用于加密的共享元数据密钥。",
+      "sharedKeyName": "共享元数据密钥"
+    }
+  }
+}

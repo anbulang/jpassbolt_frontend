@@ -1,0 +1,56 @@
+{
+  "errors": {
+    "network": "无法连接服务器。请检查网络，或确认后端是否在运行。",
+    "timeout": "服务器响应超时，请重试。",
+    "sessionExpired": "登录已过期，请重新登录。",
+    "forbidden": "你没有权限执行此操作。",
+    "notFound": "未找到。",
+    "server": "服务器出错了，请稍后重试。",
+    "unknown": "出错了，请重试。"
+  },
+  "actions": {
+    "save": "保存",
+    "saving": "保存中…",
+    "cancel": "取消",
+    "confirm": "确认",
+    "retry": "重试",
+    "copy": "复制",
+    "copied": "已复制",
+    "close": "关闭",
+    "delete": "删除",
+    "edit": "编辑",
+    "remove": "移除",
+    "add": "添加",
+    "search": "搜索",
+    "back": "返回",
+    "next": "下一步",
+    "show": "显示",
+    "hide": "隐藏"
+  },
+  "state": {
+    "loading": "加载中…",
+    "empty": "这里还什么都没有。",
+    "locked": "已锁定",
+    "unlocked": "已解锁",
+    "enabled": "已启用",
+    "disabled": "已关闭"
+  },
+  "lockpill": {
+    "unlocked": "已解锁",
+    "locking": "即将锁定",
+    "clickToLock": "点击立即锁定"
+  },
+  "nav": {
+    "vault": "保险库",
+    "users": "用户",
+    "groups": "群组",
+    "settings": "设置",
+    "encryptedMetadata": "加密元数据",
+    "profile": "个人资料",
+    "lockVault": "锁定保险库",
+    "logout": "退出登录",
+    "toLight": "切换到浅色",
+    "toDark": "切换到深色",
+    "brand": "JPassbolt"
+  }
+}

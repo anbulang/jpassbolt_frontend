@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface SpinnerProps {
     /** Diameter in px. */
@@ -11,7 +12,8 @@ interface SpinnerProps {
  * Presentational only.
  */
 export function Spinner({ size = 20, color = 'var(--primary-color)' }: SpinnerProps) {
-    return <Loader2 className="spin" size={size} color={color} aria-label="Loading" />;
+    const { t } = useTranslation('common');
+    return <Loader2 className="spin" size={size} color={color} aria-label={t('state.loading')} />;
 }
 
 interface FullSpinnerProps {

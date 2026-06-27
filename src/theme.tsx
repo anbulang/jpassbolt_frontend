@@ -21,9 +21,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
+import i18n, { type AppLocale, DEFAULT_LOCALE } from './i18n';
+import { setUserTheme } from './services/accountSettings';
 
 export type ThemeMode = 'light' | 'dark';
 export type Density = 'comfortable' | 'compact';
@@ -37,6 +40,8 @@ export interface Prefs {
   burnSecs: number;
   /** Seconds of inactivity before the vault auto-locks (0 = never). */
   idleSecs: number;
+  /** UI language. 'zh' (Chinese) is the default; 'en' is the fallback. */
+  locale: AppLocale;
 }
 
 const DEFAULTS: Prefs = {
@@ -44,20 +49,43 @@ const DEFAULTS: Prefs = {
   density: 'comfortable',
   revealSecs: 20,
   burnSecs: 30,
-  idleSecs: 300,
+  // 30 minutes — aligns the vault auto-lock window with Passbolt's ~half-hour
+  // passphrase/session feel (was 300s = 5 min, which users read as "logged out").
+  idleSecs: 1800,
+  locale: DEFAULT_LOCALE,
 };
 
-const LS_PREFS = 'jpassbolt_prefs';
+export const LS_PREFS = 'jpassbolt_prefs';
 
 function readPrefs(): Prefs {
   try {
     const raw = localStorage.getItem(LS_PREFS);
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<Prefs>;
-    return { ...DEFAULTS, ...parsed };
+    const merged = { ...DEFAULTS, ...parsed };
+    // One-time migration for prefs blobs saved BEFORE the Settings UI existed:
+    // back then idleSecs had no UI and defaulted to 300s (5 min), which users read
+    // as "logged out" — bump those stale defaults to 30 min. We detect a pre-UI
+    // blob by the ABSENCE of `locale` (introduced together with the Appearance &
+    // Language settings UI). Once that UI exists, `locale` is always persisted, so
+    // a DELIBERATE 5-minute choice (300 is now a valid IDLE_OPTIONS value) is
+    // preserved and never silently clobbered. Self-heals after one re-persist.
+    if (parsed.locale === undefined && parsed.idleSecs === 300) {
+      merged.idleSecs = DEFAULTS.idleSecs;
+    }
+    return merged;
   } catch {
     return DEFAULTS;
   }
+}
+
+/**
+ * Read the configured idle-lock seconds from persisted prefs, for non-React
+ * callers (e.g. the passphrase cache TTL in KeyContext). Returns the same value
+ * the live ThemeProvider would expose. 0 means "auto-lock disabled".
+ */
+export function readIdleSecs(): number {
+  return readPrefs().idleSecs;
 }
 
 interface ThemeContextValue {
@@ -70,11 +98,33 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [prefs, setPrefs] = useState<Prefs>(readPrefs);
+  // Tracks the theme we last mirrored to the backend, so we sync only on a real
+  // change after the first paint — never echo the value loaded on mount.
+  const lastSyncedTheme = useRef<ThemeMode | null>(null);
 
   // Apply the theme to <html> so the token override in index.css takes effect,
   // and persist the whole prefs object on every change.
   useEffect(() => {
     document.documentElement.dataset.theme = prefs.theme;
+    // Keep the live i18next language in lockstep with the persisted preference,
+    // so changing the language anywhere re-renders the whole tree in that locale.
+    if (i18n.language !== prefs.locale) {
+      void i18n.changeLanguage(prefs.locale).catch((err) => {
+        console.error('[i18n] changeLanguage failed:', err);
+      });
+    }
+    // Mirror the theme to the backend account settings (Passbolt parity,
+    // cross-device), best-effort, and ONLY on a genuine change after first paint
+    // — never on mount (that would echo the loaded value back). This covers every
+    // theme entry point (rail toggle + Settings selector) from one place; the UI
+    // itself stays prefs-driven. Other pref changes (locale/density/…) leave
+    // prefs.theme unchanged, so this is a no-op for them.
+    if (lastSyncedTheme.current !== null && lastSyncedTheme.current !== prefs.theme) {
+      void setUserTheme(prefs.theme).catch((err) => {
+        if (import.meta.env.DEV) console.warn('[theme] backend sync failed:', err);
+      });
+    }
+    lastSyncedTheme.current = prefs.theme;
     try {
       localStorage.setItem(LS_PREFS, JSON.stringify(prefs));
     } catch {

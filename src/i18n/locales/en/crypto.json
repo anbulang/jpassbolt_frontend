@@ -1,0 +1,42 @@
+{
+  "lock": {
+    "accountFallback": "Account",
+    "titleRestoring": "Restoring session…",
+    "titleUnlocking": "Unlocking your key…",
+    "titleLocked": "Vault locked",
+    "subtitleRestoring": "Restoring your session locally with the cached passphrase",
+    "subtitleLocked": "Enter your passphrase to decrypt your private key locally",
+    "spinnerRestoring": "Restoring your session with the cached passphrase…",
+    "spinnerUnlocking": "Decrypting your local private key with the passphrase…",
+    "inputLabel": "Enter passphrase to unlock",
+    "submit": "Unlock",
+    "note": "The passphrase is used for local decryption only and is never uploaded"
+  },
+  "errors": {
+    "noStoredKey": "No stored private key to unlock. Please log in again.",
+    "readStoredKey": "Failed to read stored private key.",
+    "keyNotProtected": "Your stored key is not passphrase-protected. For your security, please log in again with a passphrase-protected key.",
+    "incorrectPassphrase": "Incorrect passphrase. Could not unlock your key.",
+    "decryptMessage": "Failed to decrypt message.",
+    "vaultLocked": "Vault is locked. Unlock with your passphrase to decrypt.",
+    "noRecipientKey": "No recipient public key provided for encryption.",
+    "ownPublicKeyUnavailable": "Your own public key is unavailable. Unlock your vault before creating a secret.",
+    "readPrivateKey": "Failed to read private key: {{detail}}",
+    "decryptPrivateKey": "Failed to decrypt private key. Incorrect passphrase?",
+    "decryptMessageDetail": "Failed to decrypt message: {{detail}}",
+    "extractKeyId": "Failed to extract key ID: {{detail}}"
+  },
+  "metadata": {
+    "errors": {
+      "loadFailed": "Failed to load the shared metadata key.",
+      "blobMalformed": "The shared metadata private key blob is malformed.",
+      "requiresPassphrase": "The shared metadata private key requires a passphrase we do not have.",
+      "fingerprintMismatchDeclared": "Shared metadata private key fingerprint mismatch: the recovered key does not match its declared fingerprint; refusing to trust it.",
+      "fingerprintMismatchActive": "Shared metadata private key fingerprint mismatch: the recovered key does not match the active metadata key record; refusing to trust it.",
+      "keyUnavailable": "The shared metadata key is unavailable. Unlock your vault and ensure a metadata key is configured.",
+      "decryptMetadata": "Failed to decrypt resource metadata.",
+      "noUsableKey": "No usable shared metadata key is available to encrypt with.",
+      "sharedKeyName": "the shared metadata key"
+    }
+  }
+}

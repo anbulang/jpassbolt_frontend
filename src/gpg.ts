@@ -1,4 +1,10 @@
 import * as openpgp from 'openpgp';
+import i18n from './i18n';
+
+/** Localized crypto-layer message helper (uses the i18n singleton, like i18n/errors.ts). */
+function tc(key: string, opts?: Record<string, unknown>): string {
+    return i18n.t(`crypto:${key}`, opts ?? {});
+}
 
 /** Extract a human-readable message from an unknown thrown value. */
 function errorMessage(err: unknown): string {
@@ -23,7 +29,7 @@ export async function decryptMessage(
     try {
         privateKey = await openpgp.readPrivateKey({ armoredKey: armoredPrivateKey });
     } catch (err: unknown) {
-        throw new Error('Failed to read private key: ' + errorMessage(err));
+        throw new Error(tc('errors.readPrivateKey', { detail: errorMessage(err) }));
     }
 
     // Decrypt the private key if a passphrase is provided and it's encrypted
@@ -34,7 +40,7 @@ export async function decryptMessage(
                 passphrase,
             });
         } catch {
-            throw new Error('Failed to decrypt private key. Incorrect passphrase?');
+            throw new Error(tc('errors.decryptPrivateKey'));
         }
     }
 
@@ -47,7 +53,7 @@ export async function decryptMessage(
         });
         return decrypted as string;
     } catch (err: unknown) {
-        throw new Error('Failed to decrypt message: ' + errorMessage(err));
+        throw new Error(tc('errors.decryptMessageDetail', { detail: errorMessage(err) }));
     }
 }
 
@@ -64,7 +70,7 @@ export async function extractKeyId(armoredPrivateKey: string): Promise<string> {
         // openpgp.js returns fingerprint as a hex string
         return privateKey.getFingerprint();
     } catch (err: unknown) {
-        throw new Error('Failed to extract key ID: ' + errorMessage(err));
+        throw new Error(tc('errors.extractKeyId', { detail: errorMessage(err) }));
     }
 }
 

@@ -535,6 +535,78 @@ export interface ServerSettings {
 }
 
 // ---------------------------------------------------------------------------
+// Organization policies (admin Settings surface)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET/POST /settings/emails/notifications.json — the org email-notification
+ * policy (admin only). 25 snake_case boolean toggles governing which
+ * transactional emails are sent and how much content they include.
+ *
+ *   - show_*                : whether secret/content fields appear in the email body.
+ *   - send_password_*       : password (resource) lifecycle events.
+ *   - send_comment_*        : comment lifecycle events.
+ *   - send_folder_*         : folder lifecycle events.
+ *   - send_group_*          : group + membership events.
+ *   - send_user_* / send_admin_* : user provisioning / admin-facing events.
+ *
+ * The POST accepts a PARTIAL object (`Partial<EmailNotificationSettings>`) and
+ * the backend merges it into the stored policy, returning the full set.
+ */
+export interface EmailNotificationSettings {
+  show_comment: boolean;
+  show_description: boolean;
+  show_secret: boolean;
+  show_uri: boolean;
+  show_username: boolean;
+  send_password_create: boolean;
+  send_password_update: boolean;
+  send_password_delete: boolean;
+  send_password_share: boolean;
+  send_comment_add: boolean;
+  send_comment_update: boolean;
+  send_comment_delete: boolean;
+  send_folder_create: boolean;
+  send_folder_update: boolean;
+  send_folder_delete: boolean;
+  send_folder_share: boolean;
+  send_group_delete: boolean;
+  send_group_user_add: boolean;
+  send_group_user_delete: boolean;
+  send_group_user_update: boolean;
+  send_group_manager_update: boolean;
+  send_user_create: boolean;
+  send_user_recover: boolean;
+  send_admin_user_setup_completed: boolean;
+  send_admin_user_recover_complete: boolean;
+}
+
+/**
+ * GET /password-policies/settings.json — the org password/passphrase generator
+ * policy. Readable by any authenticated user; CE cannot edit it (the Settings
+ * card is read-only). The generator-settings sub-objects carry many fields; we
+ * type only the ones the read-only summary surfaces and keep them open-ended.
+ */
+export interface PasswordPolicies {
+  /** Which generator new passwords default to (e.g. "password" | "passphrase"). */
+  default_generator: string;
+  /** Whether generated secrets are checked against an external breach dictionary. */
+  external_dictionary_check: boolean;
+  password_generator_settings: {
+    length: number;
+    [k: string]: unknown;
+  };
+  passphrase_generator_settings: {
+    words: number;
+    word_separator: string;
+    word_case: string;
+    [k: string]: unknown;
+  };
+  /** Where the effective policy came from (e.g. "default" | "db" | "env"). */
+  source?: string;
+}
+
+// ---------------------------------------------------------------------------
 // v5 metadata
 //
 // Passbolt v5 moves a resource's name/username/uri/description out of cleartext

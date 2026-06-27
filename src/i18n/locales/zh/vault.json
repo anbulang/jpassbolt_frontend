@@ -1,0 +1,146 @@
+{
+  "search": {
+    "placeholder": "搜索凭据、用户名、网址…",
+    "clear": "清除"
+  },
+  "scope": {
+    "searchResults": "搜索结果",
+    "favorites": "收藏",
+    "folder": "文件夹",
+    "all": "全部凭据"
+  },
+  "meta": {
+    "count": "<0>{{count}}</0> 项 · {{scope}}",
+    "decrypting": "解密中…"
+  },
+  "actions": {
+    "create": "新建",
+    "createResource": "新建凭据",
+    "favorite": "收藏",
+    "unfavorite": "取消收藏",
+    "edit": "编辑",
+    "moveTo": "移动到…",
+    "delete": "删除",
+    "share": "共享",
+    "add": "添加",
+    "copy": "复制",
+    "copyPassword": "复制密码",
+    "lockNow": "立即锁定"
+  },
+  "list": {
+    "loadingVault": "正在解密你的保险库…",
+    "loadFailed": "加载失败",
+    "noMatch": "没有匹配的凭据",
+    "emptyVault": "保险库是空的",
+    "noResourcesYet": "这里还没有凭据",
+    "noMatchHint": "没有找到与「{{query}}」相关的结果，换个关键词试试。",
+    "emptyHint": "点击右上角「新建」添加你的第一条凭据——它会在离开浏览器前先在本地加密。",
+    "dragHint": "拖到文件夹可移动"
+  },
+  "panel": {
+    "selectPrompt": "选择一个凭据",
+    "selectHint": "从中间的列表选择一项，即可查看并按需在本地解密其密码。",
+    "e2ee": "端到端加密",
+    "accessCount": "{{count}} 个访问者",
+    "tabDetail": "凭据",
+    "tabShared": "共享",
+    "tabComment": "评论",
+    "fieldUsername": "用户名",
+    "fieldDescription": "描述",
+    "lastModified": "最后修改",
+    "createdAt": "创建于",
+    "resourceId": "资源 ID",
+    "encryptedForCount": "此密文已为 <1>{{count}}</1> 个对象单独加密",
+    "loadingAccess": "正在加载访问列表…",
+    "noOtherViewers": "还没有其他访问者。",
+    "groupFallback": "群组",
+    "userFallback": "用户",
+    "groupShare": "群组共享",
+    "permLevel": "级别 {{level}}",
+    "loadingComments": "正在加载评论…",
+    "noComments": "还没有评论。讨论会与凭据一同保留。",
+    "commentPlaceholder": "写下评论…",
+    "sendComment": "发送",
+    "sendingComment": "发送中…"
+  },
+  "perm": {
+    "owner": "拥有者",
+    "edit": "可编辑",
+    "read": "只读"
+  },
+  "secret": {
+    "passwordLabel": "密码",
+    "decryptedLocal": "已解密（本地）",
+    "encryptedStored": "加密存储",
+    "decrypting": "解密中…",
+    "decryptingShort": "解密中",
+    "reveal": "显示",
+    "relockNote": "{{seconds}}s 后自动重新锁定 ·",
+    "strength": "强度",
+    "strengthStrong": "很强",
+    "strengthGood": "良好",
+    "strengthWeak": "偏弱",
+    "v5MetadataEncrypted": "v5 元数据加密",
+    "e2ee": "端到端加密",
+    "copiedBurn": "已复制密码 · {{seconds}} 秒后清空剪贴板",
+    "clipboardError": "无法访问剪贴板。",
+    "decryptFailed": "解密失败。"
+  },
+  "expiry": {
+    "expired": "已过期",
+    "today": "今天过期",
+    "inDays": "{{days}} 天后过期"
+  },
+  "copy": {
+    "copied": "已复制{{label}}"
+  },
+  "move": {
+    "title": "移动「{{name}}」",
+    "titleFallback": "移动凭据",
+    "moving": "移动中…",
+    "move": "移动",
+    "targetFolder": "目标文件夹",
+    "noFolder": "无文件夹（根目录）"
+  },
+  "delete": {
+    "title": "删除凭据",
+    "message": "删除 <1>{{name}}</1>？这会对所有共享对象一并移除。你必须是该凭据的拥有者。"
+  },
+  "form": {
+    "titleEdit": "编辑凭据",
+    "titleCreate": "新建凭据",
+    "saveChanges": "保存更改",
+    "create": "创建",
+    "decryptingCurrent": "正在解密当前密钥…",
+    "nameLabel": "名称 *",
+    "namePlaceholder": "例如：GitHub",
+    "usernameLabel": "用户名",
+    "usernamePlaceholder": "you@example.com",
+    "uriLabel": "网址",
+    "uriPlaceholder": "https://example.com",
+    "passwordLabel": "密码 *",
+    "descriptionLabel": "描述",
+    "descriptionEncryptedPlaceholder": "随密钥一起加密",
+    "descriptionCleartextPlaceholder": "可选备注（不加密存储）",
+    "typeLabel": "类型",
+    "folderLabel": "文件夹",
+    "noFolder": "无文件夹（根目录）"
+  },
+  "toast": {
+    "favRemoved": "已取消收藏",
+    "favAdded": "已加入收藏",
+    "favUpdateFailed": "更新收藏失败。",
+    "deleted": "凭据已删除",
+    "deleteFailed": "删除凭据失败。",
+    "moved": "已移动凭据",
+    "moveFailed": "移动凭据失败。",
+    "updated": "凭据已更新",
+    "created": "凭据已创建",
+    "saveFailed": "保存凭据失败。"
+  },
+  "error": {
+    "loadKeyForEdit": "无法加载当前密钥以进行编辑。",
+    "publicKeyUnavailable": "您的公钥不可用。请解锁保险库后重试。",
+    "resourceTypeUnavailable": "所选资源类型不可用。请刷新后重试。"
+  }
+}

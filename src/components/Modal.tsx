@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -29,6 +30,7 @@ export function Modal({
     maxWidth = 520,
     closeOnBackdrop = true,
 }: ModalProps) {
+    const { t } = useTranslation('common');
     useEffect(() => {
         if (!open) return;
         const onKey = (e: KeyboardEvent) => {
@@ -50,7 +52,7 @@ export function Modal({
             <div className="modal animate-fade-in" style={{ maxWidth }} role="dialog" aria-modal="true">
                 <div className="modal-header">
                     <h3 className="modal-title">{title}</h3>
-                    <button className="modal-close" onClick={onClose} aria-label="Close">
+                    <button className="modal-close" onClick={onClose} aria-label={t('actions.close')}>
                         <X size={18} />
                     </button>
                 </div>

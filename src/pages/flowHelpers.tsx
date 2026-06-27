@@ -13,6 +13,7 @@
 
 import { useEffect, useState, type JSX } from 'react';
 import { Check, KeyRound } from 'lucide-react';
+import i18n from '../i18n';
 
 // ---------------------------------------------------------------------------
 // Passphrase strength
@@ -32,8 +33,18 @@ export function ppScore(p: string): number {
   return Math.min(4, s);
 }
 
-/** Strength labels indexed by ppScore() (0 = empty). */
-export const PP_LABEL = ['', '很弱', '偏弱', '不错', '很强'];
+/** Strength labels indexed by ppScore() (0 = empty). Resolved via i18n so the
+ *  label tracks the active language. */
+export function PP_LABEL(score: number): string {
+  const labels = [
+    '',
+    i18n.t('auth:keygen.strengthLabels.weak'),
+    i18n.t('auth:keygen.strengthLabels.fair'),
+    i18n.t('auth:keygen.strengthLabels.good'),
+    i18n.t('auth:keygen.strengthLabels.strong'),
+  ];
+  return labels[score] ?? '';
+}
 
 // ---------------------------------------------------------------------------
 // Stepper
@@ -74,11 +85,11 @@ export function Stepper({ steps, cur }: { steps: string[]; cur: number }): JSX.E
  */
 export function KeyGen({ onDone }: { onDone: () => void }): JSX.Element {
   const logs = [
-    '采集熵源…',
-    '生成 RSA 密钥对…',
-    '派生公钥指纹…',
-    '用 passphrase 加密私钥…',
-    '完成',
+    i18n.t('auth:keygen.logs.entropy'),
+    i18n.t('auth:keygen.logs.generating'),
+    i18n.t('auth:keygen.logs.deriving'),
+    i18n.t('auth:keygen.logs.encrypting'),
+    i18n.t('auth:keygen.logs.done'),
   ];
   const total = 36;
   const [li, setLi] = useState(0);

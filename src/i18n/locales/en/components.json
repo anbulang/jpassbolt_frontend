@@ -1,0 +1,148 @@
+{
+  "confirmDialog": {
+    "processing": "Processing…"
+  },
+  "toast": {
+    "dismiss": "Dismiss notification"
+  },
+  "avatar": {
+    "alt": "User avatar"
+  },
+  "permission": {
+    "read": "Read",
+    "canUpdate": "Can update",
+    "owner": "Owner",
+    "level": "Level {{type}}"
+  },
+  "passwordField": {
+    "placeholder": "Password",
+    "hide": "Hide",
+    "reveal": "Reveal",
+    "copyToClipboard": "Copy to clipboard",
+    "generate": "Generate",
+    "generatePassword": "Generate password",
+    "strength": {
+      "strong": "Strong",
+      "fair": "Fair",
+      "weak": "Weak"
+    }
+  },
+  "keyFile": {
+    "select": "Select key file"
+  },
+  "mfa": {
+    "title": "Two-step verification",
+    "verified": "Verified",
+    "entering": "Entering your vault…",
+    "prompt": "Enter the 6-digit code from your authenticator",
+    "verifyingChallenge": "Verifying challenge response…",
+    "openAuthenticator": "Open your authenticator app to get the one-time code",
+    "backToLogin": "Back to login",
+    "errors": {
+      "tooManyAttempts": "Too many attempts. Please try again later.",
+      "invalidCode": "Invalid code. Please try again."
+    }
+  },
+  "folderTree": {
+    "quickAccess": "Quick access",
+    "allCredentials": "All credentials",
+    "allCredentialsRoot": "All credentials (root)",
+    "unknownFolder": "(Unknown folder)",
+    "favorites": "Favorites",
+    "foldersLabel": "Folders",
+    "loading": "Loading folders…",
+    "noFolders": "No folders yet",
+    "newFolder": "New folder",
+    "renameFolder": "Rename folder",
+    "moveFolder": "Move folder",
+    "moveTitle": "Move \"{{name}}\"",
+    "deleteFolder": "Delete folder",
+    "folderName": "Folder name",
+    "namePlaceholder": "e.g. Work",
+    "parentFolder": "Parent folder",
+    "destination": "Destination",
+    "create": "Create",
+    "creating": "Creating…",
+    "moving": "Moving…",
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "sharedFolder": "Shared folder",
+    "folderActions": "Folder actions",
+    "menu": {
+      "rename": "Rename",
+      "move": "Move…",
+      "moveAction": "Move"
+    },
+    "deleteConfirm": {
+      "before": "Delete folder",
+      "after": "? This action cannot be undone."
+    },
+    "deleteCascade": "Also delete its contents (credentials and subfolders). When off, writable contents are moved to the root.",
+    "toast": {
+      "created": "Created folder \"{{name}}\".",
+      "renamed": "Folder renamed.",
+      "moved": "Moved \"{{name}}\" to {{destination}}.",
+      "deleted": "Deleted \"{{name}}\".",
+      "deletedWithContents": "Deleted \"{{name}}\" and its contents.",
+      "resourceMoved": "Moved credential to {{destination}}."
+    }
+  },
+  "share": {
+    "title": "Share resource",
+    "titleNamed": "Share \"{{name}}\"",
+    "accessorCount": "{{count}} people with access",
+    "simulate": "Simulate",
+    "simulating": "Simulating…",
+    "simulateTooltip": "Preview who would gain or lose access",
+    "encryptingAndSharing": "Encrypting and sharing…",
+    "encryptAndShare": "Encrypt and share",
+    "searchPlaceholder": "Search by name, username, or group…",
+    "searching": "Searching…",
+    "noMatches": "No matches.",
+    "user": "User",
+    "group": "Group",
+    "memberCount": "{{count}} members",
+    "whoHasAccess": "Who has access",
+    "loadingAccessList": "Loading the current access list…",
+    "noAccessYet": "Nobody has access yet. Search above to share with people or groups.",
+    "undo": "Undo",
+    "removeAro": "Remove {{name}}",
+    "removeAccess": "Remove access",
+    "lockedBanner": "The vault is locked. Unlock it with your passphrase before sharing — re-encrypting the secret for new recipients requires your private key to stay in memory.",
+    "permission": {
+      "read": "Read-only",
+      "update": "Can edit",
+      "owner": "Owner"
+    },
+    "chip": {
+      "added": "Added",
+      "removed": "Removed"
+    },
+    "reencrypt": {
+      "head": "The secret will be re-encrypted for these new recipients",
+      "sub": "{{count}} added · each secret is wrapped individually with the recipient's own public key; your private key and passphrase always stay local and never leave your device."
+    },
+    "simulation": {
+      "title": "Simulation result",
+      "gainAccess": "Gain access:",
+      "loseAccess": "Lose access:",
+      "none": "None"
+    },
+    "toast": {
+      "sharedNamed": "\"{{name}}\" shared successfully.",
+      "sharedUpdated": "Sharing updated successfully.",
+      "applyFailed": "Could not apply this share."
+    },
+    "errors": {
+      "vaultLocked": "The vault is locked. Unlock it with your passphrase before sharing.",
+      "noChanges": "There are no changes to apply.",
+      "noPublicKey": "No public key found for {{who}}; access cannot be granted yet.",
+      "cannotGetKey": "Could not retrieve the key for {{who}}.",
+      "cannotLoadGroupMembers": "Could not load the members of group \"{{group}}\".",
+      "cannotVerifyKey": "Could not verify the key for {{who}} (group \"{{group}}\").",
+      "cannotGetKeyInGroup": "Could not retrieve the key for {{who}} (group \"{{group}}\").",
+      "missingRecipientKeys": "Can't share — missing recipient keys: {{details}}",
+      "cannotReadSecret": "Could not read this resource's existing secret."
+    }
+  }
+}
