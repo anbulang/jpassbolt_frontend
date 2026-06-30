@@ -1,0 +1,54 @@
+{
+  "smtp": {
+    "title": "邮件服务器（SMTP）",
+    "subtitle": "配置用于发送邀请、恢复链接和通知的外发邮件服务器。",
+    "loading": "正在加载 SMTP 设置…",
+    "source": {
+      "db": "已保存到数据库",
+      "env": "来自环境变量",
+      "undefined": "尚未配置"
+    },
+    "envNote": "这些值来自服务器环境变量。在此保存会写入数据库覆盖项，并优先生效。",
+    "fields": {
+      "senderName": "发件人名称",
+      "senderNameHint": "收件人看到的显示名称（如 “JPassbolt”）。",
+      "senderEmail": "发件人邮箱",
+      "senderEmailHint": "所有外发邮件的 “发件人” 地址。",
+      "host": "SMTP 主机",
+      "port": "端口",
+      "tls": "使用 TLS",
+      "tlsHint": "对与邮件服务器的连接加密。",
+      "username": "用户名",
+      "password": "密码",
+      "client": "客户端（HELO/EHLO）",
+      "clientHint": "可选。本服务器向 SMTP 服务器声明的主机名。"
+    },
+    "save": "保存设置",
+    "saved": "SMTP 设置已保存。",
+    "invalidPort": "请输入有效的端口号（1–65535）。",
+    "test": {
+      "title": "发送测试邮件",
+      "subtitle": "用上面的设置发送一封测试邮件——无需先保存。",
+      "recipient": "测试邮件收件人",
+      "recipientPlaceholder": "you@example.com",
+      "send": "发送测试邮件",
+      "sending": "发送中…",
+      "success": "测试邮件已发送，请查看下方服务器追踪。",
+      "needRecipient": "请先填写收件人地址。",
+      "traceTitle": "SMTP 追踪"
+    }
+  },
+  "selfReg": {
+    "title": "自助注册",
+    "subtitle": "当访客邮箱匹配允许的域名时，允许其自行创建账户。关闭后，只有管理员能邀请用户。",
+    "loading": "正在加载自助注册设置…",
+    "enable": "允许自助注册",
+    "enableHint": "开启后，邮箱域名在列表中的访客无需邀请即可注册。",
+    "domains": "允许的邮箱域名",
+    "domainsHint": "每行一个域名（如 example.com）。开头的 @ 可省略；无效条目会被忽略。",
+    "domainsPlaceholder": "example.com\nyour-company.org",
+    "noDomains": "请至少添加一个有效域名，或关闭自助注册。",
+    "savedEnabled": "自助注册已开启。",
+    "savedDisabled": "自助注册已关闭。"
+  }
+}

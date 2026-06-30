@@ -45,6 +45,8 @@ import {
     EyeOff,
     Mail,
     KeySquare,
+    Send,
+    UserPlus,
 } from 'lucide-react';
 import { logout } from '../auth';
 import { useKey } from '../crypto/KeyContext';
@@ -78,6 +80,19 @@ import {
     setEmailNotificationSettings,
     getPasswordPolicies,
 } from '../services/orgPolicies';
+import {
+    getSmtpSettings,
+    saveSmtpSettings,
+    sendTestEmail,
+    type SmtpSettings,
+    type SmtpSettingsWrite,
+} from '../services/smtpSettings';
+import {
+    getSelfRegistrationSettings,
+    saveSelfRegistrationSettings,
+    disableSelfRegistration,
+    type SelfRegistrationSettings,
+} from '../services/selfRegistration';
 import { describeApiError } from '../i18n/errors';
 import i18n, { type AppLocale } from '../i18n';
 
@@ -1406,6 +1421,8 @@ function OrgPoliciesSection() {
 
             <EmailNotificationsCard />
             <PasswordPolicyCard />
+            <SmtpSettingsCard />
+            <SelfRegistrationCard />
         </>
     );
 }
@@ -1683,6 +1700,613 @@ function PasswordPolicyCard() {
                     )}
                 </>
             ) : null}
+        </div>
+    );
+}
+
+// ===========================================================================
+// SMTP (email server) settings — admin only
+//
+// Folded into Settings (under Organization policies) rather than a standalone
+// console: surfaces the admin-gated GET/POST /smtp/settings.json + test-email
+// endpoints that previously had no UI. Strings live in the `administration`
+// namespace; styling uses the aegis Settings kit to match the sibling cards.
+// ===========================================================================
+interface SmtpForm {
+    sender_name: string;
+    sender_email: string;
+    host: string;
+    port: string;
+    tls: boolean;
+    username: string;
+    password: string;
+    client: string;
+}
+
+const EMPTY_SMTP_FORM: SmtpForm = {
+    sender_name: '',
+    sender_email: '',
+    host: '',
+    port: '',
+    tls: true,
+    username: '',
+    password: '',
+    client: '',
+};
+
+/**
+ * Coerce the backend's permissive tls value (bool/number/string) to a boolean.
+ * The backend renders disabled TLS as `null` (PHP mapTlsToTrueOrNull; the env
+ * fallback also returns null), so null/unknown MUST map to false — defaulting to
+ * true would silently flip a plain SMTP relay (e.g. port 25, no STARTTLS) to TLS
+ * on the next save and break delivery.
+ */
+function coerceTls(v: unknown): boolean {
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v !== 0;
+    if (typeof v === 'string') {
+        const s = v.trim().toLowerCase();
+        return s === 'true' || s === '1' || s === 'tls' || s === 'ssl' || s === 'starttls';
+    }
+    return false;
+}
+
+/** Parse the port field to a valid 1..65535 integer, or null when invalid/blank. */
+function parsePort(raw: string): number | null {
+    const s = raw.trim();
+    if (!/^\d+$/.test(s)) return null;
+    const n = Number(s);
+    return n >= 1 && n <= 65535 ? n : null;
+}
+
+function smtpToForm(s: SmtpSettings): SmtpForm {
+    return {
+        sender_name: s.sender_name ?? '',
+        sender_email: s.sender_email ?? '',
+        host: s.host ?? '',
+        port: s.port != null ? String(s.port) : '',
+        tls: coerceTls(s.tls),
+        username: s.username ?? '',
+        password: s.password ?? '',
+        client: s.client ?? '',
+    };
+}
+
+function smtpToWrite(f: SmtpForm, port: number): SmtpSettingsWrite {
+    return {
+        sender_name: f.sender_name.trim(),
+        sender_email: f.sender_email.trim(),
+        host: f.host.trim(),
+        port,
+        tls: f.tls,
+        client: f.client.trim(),
+        username: f.username,
+        password: f.password,
+    };
+}
+
+function SmtpSettingsCard() {
+    const { t } = useTranslation('administration');
+    const toast = useToast();
+    const [form, setForm] = useState<SmtpForm>(EMPTY_SMTP_FORM);
+    const [source, setSource] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [showPw, setShowPw] = useState(false);
+
+    // Test-email sub-state.
+    const [testTo, setTestTo] = useState('');
+    const [testing, setTesting] = useState(false);
+    const [trace, setTrace] = useState<string[] | null>(null);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        (async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const s = await getSmtpSettings(controller.signal);
+                if (!controller.signal.aborted) {
+                    setForm(smtpToForm(s));
+                    setSource(s.source ?? null);
+                }
+            } catch (err: unknown) {
+                if (controller.signal.aborted) return;
+                setError(describeApiError(err));
+            } finally {
+                if (!controller.signal.aborted) setLoading(false);
+            }
+        })();
+        return () => controller.abort();
+    }, []);
+
+    const handleSave = async () => {
+        const port = parsePort(form.port);
+        if (port === null) {
+            const msg = t('smtp.invalidPort');
+            setError(msg);
+            toast.error(msg);
+            return;
+        }
+        setSaving(true);
+        setError(null);
+        try {
+            const updated = await saveSmtpSettings(smtpToWrite(form, port));
+            setForm(smtpToForm(updated));
+            setSource(updated.source ?? 'db');
+            toast.success(t('smtp.saved'));
+        } catch (err: unknown) {
+            const msg = describeApiError(err);
+            setError(msg);
+            toast.error(msg);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleTest = async () => {
+        if (!testTo.trim()) {
+            toast.error(t('smtp.test.needRecipient'));
+            return;
+        }
+        const port = parsePort(form.port);
+        if (port === null) {
+            toast.error(t('smtp.invalidPort'));
+            return;
+        }
+        setTesting(true);
+        setTrace(null);
+        try {
+            const res = await sendTestEmail({ ...smtpToWrite(form, port), email_test_to: testTo.trim() });
+            setTrace(res.debug ?? []);
+            toast.success(t('smtp.test.success'));
+        } catch (err: unknown) {
+            // A delivery/validation failure (400) still carries the masked trace
+            // under body.debug — show it so the admin can diagnose.
+            const e = err as { response?: { data?: { body?: { debug?: string[] } } } };
+            const debug = e.response?.data?.body?.debug;
+            if (Array.isArray(debug)) setTrace(debug);
+            toast.error(describeApiError(err));
+        } finally {
+            setTesting(false);
+        }
+    };
+
+    const sourceKey = source === 'db' || source === 'env' ? source : 'undefined';
+
+    return (
+        <div className="scard">
+            <div className="scard-h">
+                <Mail />
+                <h3>{t('smtp.title')}</h3>
+                {source && (
+                    <span
+                        className={`chip ${source === 'db' ? 'green' : 'neutral'}`}
+                        style={{ marginLeft: 'auto' }}
+                    >
+                        {t(`smtp.source.${sourceKey}`)}
+                    </span>
+                )}
+            </div>
+
+            {loading ? (
+                <div style={{ padding: '15px 18px' }}>
+                    <FullSpinner label={t('smtp.loading')} />
+                </div>
+            ) : (
+                <>
+                    <div style={{ padding: '15px 18px 0' }}>
+                        <div className="hint" style={{ lineHeight: 1.5 }}>
+                            {t('smtp.subtitle')}
+                        </div>
+                        {source === 'env' && (
+                            <div style={{ marginTop: 12 }}>
+                                <ErrorBanner>{t('smtp.envNote')}</ErrorBanner>
+                            </div>
+                        )}
+                        {error && (
+                            <div style={{ marginTop: 12 }}>
+                                <ErrorBanner>{error}</ErrorBanner>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="srow">
+                        <div className="sk">
+                            <div className="label">{t('smtp.fields.senderName')}</div>
+                            <div className="hint">{t('smtp.fields.senderNameHint')}</div>
+                        </div>
+                        <div className="sv">
+                            <input
+                                className="sinput sans"
+                                value={form.sender_name}
+                                disabled={saving}
+                                onChange={(e) =>
+                                    setForm((f) => ({ ...f, sender_name: e.target.value }))
+                                }
+                            />
+                        </div>
+                    </div>
+
+                    <div className="srow">
+                        <div className="sk">
+                            <div className="label">{t('smtp.fields.senderEmail')}</div>
+                            <div className="hint">{t('smtp.fields.senderEmailHint')}</div>
+                        </div>
+                        <div className="sv">
+                            <input
+                                className="sinput sans"
+                                type="email"
+                                value={form.sender_email}
+                                disabled={saving}
+                                onChange={(e) =>
+                                    setForm((f) => ({ ...f, sender_email: e.target.value }))
+                                }
+                            />
+                        </div>
+                    </div>
+
+                    <div className="srow">
+                        <div className="sk">
+                            <div className="label">{t('smtp.fields.host')}</div>
+                        </div>
+                        <div className="sv">
+                            <input
+                                className="sinput"
+                                value={form.host}
+                                disabled={saving}
+                                placeholder="smtp.example.com"
+                                onChange={(e) => setForm((f) => ({ ...f, host: e.target.value }))}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="srow">
+                        <div className="sk">
+                            <div className="label">{t('smtp.fields.port')}</div>
+                        </div>
+                        <div className="sv">
+                            <input
+                                className="sinput"
+                                inputMode="numeric"
+                                value={form.port}
+                                disabled={saving}
+                                placeholder="587"
+                                onChange={(e) => setForm((f) => ({ ...f, port: e.target.value }))}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="srow">
+                        <div className="sk">
+                            <div className="label">{t('smtp.fields.tls')}</div>
+                            <div className="hint">{t('smtp.fields.tlsHint')}</div>
+                        </div>
+                        <div className="sv">
+                            <button
+                                type="button"
+                                className={`switch${form.tls ? ' on' : ''}`}
+                                onClick={() => setForm((f) => ({ ...f, tls: !f.tls }))}
+                                disabled={saving}
+                                aria-pressed={form.tls}
+                                aria-label={t('smtp.fields.tls')}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="srow">
+                        <div className="sk">
+                            <div className="label">{t('smtp.fields.username')}</div>
+                        </div>
+                        <div className="sv">
+                            <input
+                                className="sinput"
+                                value={form.username}
+                                disabled={saving}
+                                autoComplete="off"
+                                onChange={(e) =>
+                                    setForm((f) => ({ ...f, username: e.target.value }))
+                                }
+                            />
+                        </div>
+                    </div>
+
+                    <div className="srow">
+                        <div className="sk">
+                            <div className="label">{t('smtp.fields.password')}</div>
+                        </div>
+                        <div className="sv" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <input
+                                className="sinput"
+                                type={showPw ? 'text' : 'password'}
+                                value={form.password}
+                                disabled={saving}
+                                autoComplete="new-password"
+                                style={{ flex: 1 }}
+                                onChange={(e) =>
+                                    setForm((f) => ({ ...f, password: e.target.value }))
+                                }
+                            />
+                            <button
+                                type="button"
+                                className="copybtn"
+                                onClick={() => setShowPw((v) => !v)}
+                                aria-label={showPw ? t('common:actions.hide') : t('common:actions.show')}
+                                title={showPw ? t('common:actions.hide') : t('common:actions.show')}
+                            >
+                                {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="srow">
+                        <div className="sk">
+                            <div className="label">{t('smtp.fields.client')}</div>
+                            <div className="hint">{t('smtp.fields.clientHint')}</div>
+                        </div>
+                        <div className="sv">
+                            <input
+                                className="sinput"
+                                value={form.client}
+                                disabled={saving}
+                                onChange={(e) => setForm((f) => ({ ...f, client: e.target.value }))}
+                            />
+                        </div>
+                    </div>
+
+                    <div style={{ padding: '4px 18px 16px' }}>
+                        <button
+                            type="button"
+                            className="btn primary"
+                            onClick={() => void handleSave()}
+                            disabled={saving}
+                        >
+                            {saving ? <Spinner size={16} color="#fff" /> : null}
+                            {t('smtp.save')}
+                        </button>
+                    </div>
+
+                    {/* Test email */}
+                    <div className="scard-h" style={{ borderTop: '1px solid var(--border)' }}>
+                        <Send />
+                        <h3>{t('smtp.test.title')}</h3>
+                    </div>
+                    <div style={{ padding: '15px 18px' }}>
+                        <div className="hint" style={{ marginBottom: 12, lineHeight: 1.5 }}>
+                            {t('smtp.test.subtitle')}
+                        </div>
+                        <div
+                            style={{
+                                display: 'flex',
+                                gap: 10,
+                                alignItems: 'center',
+                                flexWrap: 'wrap',
+                            }}
+                        >
+                            <input
+                                className="sinput sans"
+                                type="email"
+                                value={testTo}
+                                disabled={testing}
+                                placeholder={t('smtp.test.recipientPlaceholder')}
+                                aria-label={t('smtp.test.recipient')}
+                                style={{ flex: 1, minWidth: 220 }}
+                                onChange={(e) => setTestTo(e.target.value)}
+                            />
+                            <button
+                                type="button"
+                                className="btn"
+                                onClick={() => void handleTest()}
+                                disabled={testing}
+                            >
+                                {testing ? <Spinner size={16} /> : <Send size={16} />}
+                                {testing ? t('smtp.test.sending') : t('smtp.test.send')}
+                            </button>
+                        </div>
+                        {trace && (
+                            <div style={{ marginTop: 12 }}>
+                                <div className="hint" style={{ marginBottom: 6 }}>
+                                    {t('smtp.test.traceTitle')}
+                                </div>
+                                <pre
+                                    style={{
+                                        margin: 0,
+                                        padding: 12,
+                                        background: 'var(--surface-3)',
+                                        border: '1px solid var(--border)',
+                                        borderRadius: 'var(--r)',
+                                        fontSize: 12,
+                                        lineHeight: 1.5,
+                                        whiteSpace: 'pre-wrap',
+                                        wordBreak: 'break-word',
+                                        maxHeight: 260,
+                                        overflow: 'auto',
+                                        fontFamily: 'var(--mono)',
+                                        color: 'var(--text-2)',
+                                    }}
+                                >
+                                    {trace.length ? trace.join('\n') : '—'}
+                                </pre>
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
+// ===========================================================================
+// Self registration — admin only
+// ===========================================================================
+
+/**
+ * Parse a free-text domain list (newline / comma / space separated) into a
+ * clean, de-duplicated, lower-cased array. Forgiving pre-filter; the backend
+ * runs its own authoritative validation. Tighten `looksLikeDomain` to reject
+ * more up front (e.g. require a 2+ char TLD).
+ */
+function parseDomains(text: string): string[] {
+    const looksLikeDomain = /^[^\s@/]+\.[^\s@/]+$/;
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of text.split(/[\s,]+/)) {
+        let d = raw.trim().toLowerCase();
+        if (d.startsWith('@')) d = d.slice(1);
+        if (!d || !looksLikeDomain.test(d) || seen.has(d)) continue;
+        seen.add(d);
+        out.push(d);
+    }
+    return out;
+}
+
+function SelfRegistrationCard() {
+    const { t } = useTranslation('administration');
+    const toast = useToast();
+    const [settings, setSettings] = useState<SelfRegistrationSettings | null>(null);
+    const [enabled, setEnabled] = useState(false);
+    const [domainsText, setDomainsText] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        (async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const s = await getSelfRegistrationSettings(controller.signal);
+                if (!controller.signal.aborted) {
+                    setSettings(s);
+                    setEnabled(s.provider === 'email_domains');
+                    setDomainsText((s.data?.allowed_domains ?? []).join('\n'));
+                }
+            } catch (err: unknown) {
+                if (controller.signal.aborted) return;
+                setError(describeApiError(err));
+            } finally {
+                if (!controller.signal.aborted) setLoading(false);
+            }
+        })();
+        return () => controller.abort();
+    }, []);
+
+    const handleSave = async () => {
+        setSaving(true);
+        setError(null);
+        try {
+            if (enabled) {
+                const domains = parseDomains(domainsText);
+                if (domains.length === 0) {
+                    const msg = t('selfReg.noDomains');
+                    setError(msg);
+                    toast.error(msg);
+                    setSaving(false);
+                    return;
+                }
+                const updated = await saveSelfRegistrationSettings(domains);
+                setSettings(updated);
+                setDomainsText((updated.data?.allowed_domains ?? domains).join('\n'));
+                toast.success(t('selfReg.savedEnabled'));
+            } else {
+                // Turning it off only needs a call when a policy row exists.
+                if (settings?.id) {
+                    const updated = await disableSelfRegistration(settings.id);
+                    setSettings(updated);
+                }
+                toast.success(t('selfReg.savedDisabled'));
+            }
+        } catch (err: unknown) {
+            const msg = describeApiError(err);
+            setError(msg);
+            toast.error(msg);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="scard">
+            <div className="scard-h">
+                <UserPlus />
+                <h3>{t('selfReg.title')}</h3>
+                {!loading && (
+                    <span
+                        className={`chip ${enabled ? 'green' : 'neutral'}`}
+                        style={{ marginLeft: 'auto' }}
+                    >
+                        {enabled ? t('common:state.enabled') : t('common:state.disabled')}
+                    </span>
+                )}
+            </div>
+
+            {loading ? (
+                <div style={{ padding: '15px 18px' }}>
+                    <FullSpinner label={t('selfReg.loading')} />
+                </div>
+            ) : (
+                <>
+                    <div style={{ padding: '15px 18px 0' }}>
+                        <div className="hint" style={{ lineHeight: 1.5 }}>
+                            {t('selfReg.subtitle')}
+                        </div>
+                        {error && (
+                            <div style={{ marginTop: 12 }}>
+                                <ErrorBanner>{error}</ErrorBanner>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="srow">
+                        <div className="sk">
+                            <div className="label">{t('selfReg.enable')}</div>
+                            <div className="hint">{t('selfReg.enableHint')}</div>
+                        </div>
+                        <div className="sv">
+                            <button
+                                type="button"
+                                className={`switch${enabled ? ' on' : ''}`}
+                                onClick={() => setEnabled((v) => !v)}
+                                disabled={saving}
+                                aria-pressed={enabled}
+                                aria-label={t('selfReg.enable')}
+                            />
+                        </div>
+                    </div>
+
+                    {enabled && (
+                        <div className="srow" style={{ display: 'block' }}>
+                            <div className="sk" style={{ marginBottom: 8 }}>
+                                <div className="label">{t('selfReg.domains')}</div>
+                                <div className="hint">{t('selfReg.domainsHint')}</div>
+                            </div>
+                            <textarea
+                                className="sinput"
+                                rows={5}
+                                value={domainsText}
+                                disabled={saving}
+                                placeholder={t('selfReg.domainsPlaceholder')}
+                                onChange={(e) => setDomainsText(e.target.value)}
+                                style={{ width: '100%', fontFamily: 'var(--mono)', resize: 'vertical' }}
+                            />
+                        </div>
+                    )}
+
+                    <div style={{ padding: '4px 18px 16px' }}>
+                        <button
+                            type="button"
+                            className="btn primary"
+                            onClick={() => void handleSave()}
+                            disabled={saving}
+                        >
+                            {saving ? <Spinner size={16} color="#fff" /> : null}
+                            {t('common:actions.save')}
+                        </button>
+                    </div>
+                </>
+            )}
         </div>
     );
 }
