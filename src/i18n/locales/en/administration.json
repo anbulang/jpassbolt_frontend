@@ -1,0 +1,53 @@
+{
+  "smtp": {
+    "title": "Email server (SMTP)",
+    "subtitle": "Configure the outgoing mail server used to send invitations, recovery links and notifications.",
+    "loading": "Loading SMTP settings…",
+    "source": {
+      "db": "Saved in database",
+      "env": "From environment",
+      "undefined": "Not configured"
+    },
+    "envNote": "These values come from the server environment. Saving here stores a database override that takes precedence.",
+    "fields": {
+      "senderName": "Sender name",
+      "senderNameHint": "The display name recipients see (e.g. \"JPassbolt\").",
+      "senderEmail": "Sender email",
+      "senderEmailHint": "The \"from\" address for all outgoing mail.",
+      "host": "SMTP host",
+      "port": "Port",
+      "tls": "Use TLS",
+      "tlsHint": "Encrypt the connection to the mail server.",
+      "username": "Username",
+      "password": "Password",
+      "client": "Client (HELO/EHLO)",
+      "clientHint": "Optional. The hostname this server announces to the SMTP server."
+    },
+    "save": "Save settings",
+    "saved": "SMTP settings saved.",
+    "test": {
+      "title": "Send a test email",
+      "subtitle": "Send a test message through the settings above — you don't need to save first.",
+      "recipient": "Send test email to",
+      "recipientPlaceholder": "you@example.com",
+      "send": "Send test email",
+      "sending": "Sending…",
+      "success": "Test email sent. See the server trace below.",
+      "needRecipient": "Enter a recipient address first.",
+      "traceTitle": "SMTP trace"
+    }
+  },
+  "selfReg": {
+    "title": "Self registration",
+    "subtitle": "Let people create their own account when their email matches an allowed domain. When off, only administrators can invite users.",
+    "loading": "Loading self-registration settings…",
+    "enable": "Allow self registration",
+    "enableHint": "When on, a visitor whose email domain is on the list can sign up without an invitation.",
+    "domains": "Allowed email domains",
+    "domainsHint": "One domain per line (e.g. example.com). A leading @ is optional; invalid entries are dropped.",
+    "domainsPlaceholder": "example.com\nyour-company.org",
+    "noDomains": "Add at least one valid domain, or turn self registration off.",
+    "savedEnabled": "Self registration is on.",
+    "savedDisabled": "Self registration is off."
+  }
+}
