@@ -1734,7 +1734,13 @@ const EMPTY_SMTP_FORM: SmtpForm = {
     client: '',
 };
 
-/** Coerce the backend's permissive tls value (bool/number/string) to a boolean. */
+/**
+ * Coerce the backend's permissive tls value (bool/number/string) to a boolean.
+ * The backend renders disabled TLS as `null` (PHP mapTlsToTrueOrNull; the env
+ * fallback also returns null), so null/unknown MUST map to false — defaulting to
+ * true would silently flip a plain SMTP relay (e.g. port 25, no STARTTLS) to TLS
+ * on the next save and break delivery.
+ */
 function coerceTls(v: unknown): boolean {
     if (typeof v === 'boolean') return v;
     if (typeof v === 'number') return v !== 0;
@@ -1742,7 +1748,15 @@ function coerceTls(v: unknown): boolean {
         const s = v.trim().toLowerCase();
         return s === 'true' || s === '1' || s === 'tls' || s === 'ssl' || s === 'starttls';
     }
-    return true;
+    return false;
+}
+
+/** Parse the port field to a valid 1..65535 integer, or null when invalid/blank. */
+function parsePort(raw: string): number | null {
+    const s = raw.trim();
+    if (!/^\d+$/.test(s)) return null;
+    const n = Number(s);
+    return n >= 1 && n <= 65535 ? n : null;
 }
 
 function smtpToForm(s: SmtpSettings): SmtpForm {
@@ -1758,13 +1772,12 @@ function smtpToForm(s: SmtpSettings): SmtpForm {
     };
 }
 
-function smtpToWrite(f: SmtpForm): SmtpSettingsWrite {
-    const port = parseInt(f.port, 10);
+function smtpToWrite(f: SmtpForm, port: number): SmtpSettingsWrite {
     return {
         sender_name: f.sender_name.trim(),
         sender_email: f.sender_email.trim(),
         host: f.host.trim(),
-        port: Number.isFinite(port) ? port : 587,
+        port,
         tls: f.tls,
         client: f.client.trim(),
         username: f.username,
@@ -1809,10 +1822,17 @@ function SmtpSettingsCard() {
     }, []);
 
     const handleSave = async () => {
+        const port = parsePort(form.port);
+        if (port === null) {
+            const msg = t('smtp.invalidPort');
+            setError(msg);
+            toast.error(msg);
+            return;
+        }
         setSaving(true);
         setError(null);
         try {
-            const updated = await saveSmtpSettings(smtpToWrite(form));
+            const updated = await saveSmtpSettings(smtpToWrite(form, port));
             setForm(smtpToForm(updated));
             setSource(updated.source ?? 'db');
             toast.success(t('smtp.saved'));
@@ -1830,10 +1850,15 @@ function SmtpSettingsCard() {
             toast.error(t('smtp.test.needRecipient'));
             return;
         }
+        const port = parsePort(form.port);
+        if (port === null) {
+            toast.error(t('smtp.invalidPort'));
+            return;
+        }
         setTesting(true);
         setTrace(null);
         try {
-            const res = await sendTestEmail({ ...smtpToWrite(form), email_test_to: testTo.trim() });
+            const res = await sendTestEmail({ ...smtpToWrite(form, port), email_test_to: testTo.trim() });
             setTrace(res.debug ?? []);
             toast.success(t('smtp.test.success'));
         } catch (err: unknown) {

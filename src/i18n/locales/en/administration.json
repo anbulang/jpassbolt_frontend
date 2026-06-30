@@ -25,6 +25,7 @@
     },
     "save": "Save settings",
     "saved": "SMTP settings saved.",
+    "invalidPort": "Enter a valid port number (1–65535).",
     "test": {
       "title": "Send a test email",
       "subtitle": "Send a test message through the settings above — you don't need to save first.",
